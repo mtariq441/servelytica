@@ -5,27 +5,75 @@ export const FeaturedCoachService = {
       const response = await fetch(`/api/featured-coaches?limit=${limit}`);
       if (!response.ok) {
         console.warn('Featured coaches API returned:', response.status, '- using default data');
-        return [{
-          id: "demo-1",
-          name: "Professional Coach",
-          description: "Expert sports analysis and coaching",
-          display_name: "Coach Expert",
-          rating: 4.9,
-          reviews: 200
-        }];
+        return [
+          {
+            id: "demo-1",
+            coachId: "demo-1",
+            name: "Michael Chen",
+            title: "Former National Champion",
+            rating: 4.9,
+            reviews: 124,
+            image: "MC",
+            displayOrder: 1,
+          },
+          {
+            id: "demo-2",
+            coachId: "demo-2",
+            name: "Sarah Wong",
+            title: "Olympic Medalist",
+            rating: 5.0,
+            reviews: 98,
+            image: "SW",
+            displayOrder: 2,
+          },
+          {
+            id: "demo-3",
+            coachId: "demo-3",
+            name: "David Müller",
+            title: "Professional Coach",
+            rating: 4.8,
+            reviews: 156,
+            image: "DM",
+            displayOrder: 3,
+          },
+        ];
       }
       const text = await response.text();
       return JSON.parse(text);
     } catch (error) {
       console.warn('Error fetching featured coaches, using fallback:', error);
-      return [{
-        id: "demo-1",
-        name: "Professional Coach",
-        description: "Expert sports analysis and coaching",
-        display_name: "Coach Expert",
-        rating: 4.9,
-        reviews: 200
-      }];
+      return [
+        {
+          id: "demo-1",
+          coachId: "demo-1",
+          name: "Michael Chen",
+          title: "Former National Champion",
+          rating: 4.9,
+          reviews: 124,
+          image: "MC",
+          displayOrder: 1,
+        },
+        {
+          id: "demo-2",
+          coachId: "demo-2",
+          name: "Sarah Wong",
+          title: "Olympic Medalist",
+          rating: 5.0,
+          reviews: 98,
+          image: "SW",
+          displayOrder: 2,
+        },
+        {
+          id: "demo-3",
+          coachId: "demo-3",
+          name: "David Müller",
+          title: "Professional Coach",
+          rating: 4.8,
+          reviews: 156,
+          image: "DM",
+          displayOrder: 3,
+        },
+      ];
     }
   },
 
