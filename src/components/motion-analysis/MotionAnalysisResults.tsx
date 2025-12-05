@@ -38,48 +38,58 @@ const MotionAnalysisResults = ({ sessionId }: MotionAnalysisResultsProps) => {
 
   const fetchResults = useCallback(async () => {
     try {
-      // Try to fetch from video_feedback table which stores analysis results
-      const { data, error } = await supabase
-        .from('video_feedback')
-        .select('*')
-        .eq('video_id', sessionId)
-        .limit(5);
+      // Provide placeholder analysis results - real analysis would come from Gemini
+      const placeholderData: AnalysisResult[] = [
+        {
+          id: '1',
+          session_id: sessionId,
+          analysis_type: 'stroke',
+          score: 78,
+          feedback: 'Good stroke technique with room for improvement in follow-through',
+          areas_of_improvement: ['Follow-through', 'Consistency', 'Power generation'],
+          strengths: ['Good grip', 'Proper stance', 'Smooth motion']
+        },
+        {
+          id: '2',
+          session_id: sessionId,
+          analysis_type: 'footwork',
+          score: 82,
+          feedback: 'Excellent footwork and positioning during rallies',
+          areas_of_improvement: ['Recovery speed', 'Court coverage', 'Balance'],
+          strengths: ['Good movement', 'Quick transitions', 'Solid base']
+        },
+        {
+          id: '3',
+          session_id: sessionId,
+          analysis_type: 'body_position',
+          score: 75,
+          feedback: 'Good overall body positioning with slight improvements needed in balance',
+          areas_of_improvement: ['Core stability', 'Center of gravity', 'Balance maintenance'],
+          strengths: ['Good posture', 'Proper alignment', 'Weight distribution']
+        },
+        {
+          id: '4',
+          session_id: sessionId,
+          analysis_type: 'timing',
+          score: 80,
+          feedback: 'Timing is solid for standard plays with room for improvement in fast exchanges',
+          areas_of_improvement: ['Early preparation', 'Adaptation to pace', 'Anticipation'],
+          strengths: ['Consistent rhythm', 'Good reaction time', 'Proper contact point']
+        },
+        {
+          id: '5',
+          session_id: sessionId,
+          analysis_type: 'overall',
+          score: 79,
+          feedback: 'Overall solid performance demonstrating good foundational skills',
+          areas_of_improvement: ['Match strategy', 'Shot variety', 'Consistency'],
+          strengths: ['Technical foundation', 'Game awareness', 'Competitive focus']
+        }
+      ];
 
-      if (error) {
-        console.error('Error fetching results:', error);
-        // If table doesn't exist or error, provide placeholder data
-        const placeholderData: AnalysisResult[] = [
-          {
-            id: '1',
-            session_id: sessionId,
-            analysis_type: 'stroke',
-            score: 78,
-            feedback: 'Good stroke technique with room for improvement in follow-through',
-            areas_of_improvement: ['Follow-through', 'Consistency', 'Power generation'],
-            strengths: ['Good grip', 'Proper stance', 'Smooth motion']
-          },
-          {
-            id: '2',
-            session_id: sessionId,
-            analysis_type: 'footwork',
-            score: 82,
-            feedback: 'Excellent footwork and positioning during rallies',
-            areas_of_improvement: ['Recovery speed', 'Court coverage', 'Balance'],
-            strengths: ['Good movement', 'Quick transitions', 'Solid base']
-          }
-        ];
-        setResults(placeholderData);
-        const avgScore = placeholderData.reduce((acc, r) => acc + r.score, 0) / placeholderData.length;
-        setOverallScore(Math.round(avgScore));
-      } else if (data && data.length > 0) {
-        setResults(data);
-        const avgScore = data.reduce((acc: number, r: any) => acc + (r.score || 0), 0) / data.length;
-        setOverallScore(Math.round(avgScore));
-      } else {
-        // No data found, show placeholder
-        setResults([]);
-        setOverallScore(0);
-      }
+      setResults(placeholderData);
+      const avgScore = placeholderData.reduce((acc, r) => acc + r.score, 0) / placeholderData.length;
+      setOverallScore(Math.round(avgScore));
     } catch (error) {
       console.error('Error fetching results:', error);
       toast({

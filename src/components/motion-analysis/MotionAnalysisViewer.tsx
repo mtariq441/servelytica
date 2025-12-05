@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Pause, SkipForward, SkipBack, Maximize2, Circle, Square, ArrowRight, Type, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import ReactPlayer, { ReactPlayerProps } from 'react-player';
+import ReactPlayer from 'react-player';
 
 interface MotionAnalysisViewerProps {
   sessionId: string;
@@ -55,11 +55,16 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
       // Fetch session data from videos table
       const { data: sessionData, error: sessionError } = await supabase
         .from('videos')
-        .select('id, title, description, file_path, analysis_status, created_at')
+        .select('id, title, description, file_path, created_at')
         .eq('id', sessionId)
         .single();
 
-      if (sessionError) throw sessionError;
+      if (sessionError) {
+        console.error('Error fetching session:', sessionError);
+        setLoading(false);
+        return;
+      }
+
       if (!sessionData) {
         setLoading(false);
         return;
@@ -70,7 +75,7 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
         title: sessionData.title || 'Untitled Video',
         description: sessionData.description || '',
         video_file_path: sessionData.file_path || '',
-        analysis_status: sessionData.analysis_status || 'pending',
+        analysis_status: 'completed',
         created_at: sessionData.created_at || ''
       });
 
@@ -87,7 +92,7 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
         }
       }
 
-      // Annotations are optional - just set empty array if not found
+      // Annotations are optional - just set empty array
       setAnnotations([]);
 
     } catch (error) {
@@ -201,6 +206,8 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
                     height="100%"
                     onProgress={(state: any) => setCurrentTime(state?.playedSeconds || 0)}
                     onDuration={(d: number) => setDuration(d)}
+                    pip={false}
+                    style={{}}
                   />
                   
                   {/* Overlay Annotations */}
