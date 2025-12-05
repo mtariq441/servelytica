@@ -182,6 +182,7 @@ const AuthPage = () => {
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         placeholder="your@email.com"
+                        autoComplete="email"
                         required
                       />
                     </div>
@@ -211,6 +212,7 @@ const AuthPage = () => {
                           value={signupEmail}
                           onChange={(e) => setSignupEmail(e.target.value)}
                           placeholder="your@email.com"
+                          autoComplete="email"
                           required
                         />
                       </div>
