@@ -51,7 +51,13 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
   ];
 
   const fetchSessionData = useCallback(async () => {
+    if (!sessionId) {
+      setLoading(false);
+      return;
+    }
+
     try {
+      setLoading(true);
       // Fetch session data from videos table
       const { data: sessionData, error: sessionError } = await supabase
         .from('videos')
