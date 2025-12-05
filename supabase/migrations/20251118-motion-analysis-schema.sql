@@ -18,7 +18,7 @@ CREATE TABLE public.motion_analysis_results (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES public.motion_analysis_sessions(id) ON DELETE CASCADE,
     analysis_type TEXT NOT NULL CHECK (analysis_type IN ('stroke', 'footwork', 'body_position', 'timing', 'overall')),
-    score DECIMAL(3,2) CHECK (score >= 0 AND score <= 100),
+    score NUMERIC(5,2) CHECK (score >= 0 AND score <= 100),
     feedback TEXT,
     areas_of_improvement JSONB,
     strengths JSONB,

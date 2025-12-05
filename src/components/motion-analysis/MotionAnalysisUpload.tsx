@@ -186,7 +186,7 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
         const resultsData = analysisTypes.map(type => ({
           session_id: analysisSession.id,
           analysis_type: type,
-          score: Math.floor(Math.random() * 30) + 70,
+          score: parseFloat((Math.floor(Math.random() * 30) + 70).toFixed(2)),
           feedback: generatePlaceholderFeedback(type, formData.strokeType),
           areas_of_improvement: generateAreasOfImprovement(type),
           strengths: generateStrengths(type)
