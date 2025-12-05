@@ -11,6 +11,7 @@ import FeaturedEvents from "@/components/blog/FeaturedEvents";
 import BlogNavigation from "@/components/blog/BlogNavigation";
 import ArticlesList from "@/components/blog/ArticlesList";
 import { supabase } from "@/integrations/supabase/client";
+import { articleService } from "@/services/blogService";
 
 const BlogPage = () => {
   const [allArticles, setAllArticles] = useState([]);
@@ -21,17 +22,50 @@ const BlogPage = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(true);
   const [loading, setLoading] = useState(true);
 
+  // Fetch articles and categories
+  const fetchArticles = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Use articleService to fetch published articles (fallback to local data if necessary)
+      const data = await articleService.getArticles({ limit: 50 });
+      setAllArticles(data || []);
+    } catch (err) {
+      console.error("Error fetching articles:", err);
+      // fallback to static ARTICLES from BlogData
+      setAllArticles(Array.isArray(ARTICLES) ? ARTICLES : []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("categories").select("id, name").order("name");
+      if (error) throw error;
+      const names = (data || []).map((c: any) => c.name);
+      setCategories(["All", ...names]);
+    } catch (err) {
+      console.error("Error fetching categories:", err);
+      setCategories(Array.isArray(CATEGORIES) ? ["All", ...CATEGORIES.map((c: any) => c.name || c)] : ["All"]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchArticles();
     fetchCategories();
-  }, []);
+  }, [fetchArticles, fetchCategories]);
 
   const filterArticles = useCallback(() => {
-    const filtered = allArticles.filter(article => {
-      const matchesSearch = article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        article.excerpt.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        article.content.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === "All" || article.category === selectedCategory;
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = allArticles.filter((article: any) => {
+      const title = (article.title || "").toString().toLowerCase();
+      const excerpt = (article.excerpt || "").toString().toLowerCase();
+      const content = (article.content || "").toString().toLowerCase();
+      const matchesSearch = !q || title.includes(q) || excerpt.includes(q) || content.includes(q);
+
+      // Support category being an object or a string
+      const articleCategory = typeof article.category === "string" ? article.category : (article.category?.name || article.category);
+      const matchesCategory = selectedCategory === "All" || articleCategory === selectedCategory;
 
       return matchesSearch && matchesCategory;
     });

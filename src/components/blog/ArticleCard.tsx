@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import ShareModal from "../ShareModal";
 
 interface Article {
-  id: number;
+  id: string;
   title: string;
   excerpt: string;
   date: string;
@@ -28,7 +28,7 @@ const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1516542108649-c52a66bda
 const ArticleCard = ({ article }: ArticleCardProps) => {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(article.likes || 0);
-  const [openShareOptions, setOpenShareOptions] = useState<{ open: boolean; id: number | null } | null>(null);
+  const [openShareOptions, setOpenShareOptions] = useState<{ open: boolean; id: string | null } | null>(null);
   const [imageError, setImageError] = useState(false);
 
   const handleLike = (e: React.MouseEvent) => {

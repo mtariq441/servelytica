@@ -579,7 +579,7 @@ interface Comment {
 
 interface BlogPostProps {
   article: {
-    id: number;
+    id: string;
     title: string;
     excerpt: string;
     content: string;
@@ -604,7 +604,7 @@ const BlogPost = ({ article }: BlogPostProps) => {
   const [commentCount, setCommentCount] = useState(article.comments || 0);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const navigate = useNavigate();
-  const [openShareOptions, setOpenShareOptions] = useState<{ open: boolean; id: number | null } | null>(null);
+  const [openShareOptions, setOpenShareOptions] = useState<{ open: boolean; id: string | null } | null>(null);
   const [hoveredCommentId, setHoveredCommentId] = useState<string | null>(null);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentContent, setEditCommentContent] = useState("");

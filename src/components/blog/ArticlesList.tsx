@@ -4,7 +4,7 @@ import { Box, Typography, Pagination, PaginationItem } from "@mui/material";
 import { motion } from "framer-motion";
 
 interface Article {
-  id: number;
+  id: string;
   title: string;
   excerpt: string;
   date: string;

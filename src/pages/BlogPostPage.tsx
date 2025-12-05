@@ -15,7 +15,7 @@ const BlogPostPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-   const fetchArticles = async (id) => {
+  const fetchArticles = async (id: string) => {
       try {
         const { data: article, error } = await supabase
           .from('articles_with_counts')
@@ -42,31 +42,32 @@ const BlogPostPage = () => {
         setError(null);
         // setAllArticles(formattedData);
         // setFilteredArticles(formattedData);
-      } catch (error) {
-        console.error('Error fetching articles:', error.message);
-      } finally {
-        setLoading(false);
+      } catch (err: any) {
+        console.error('Error fetching articles:', err?.message || err);
+        setError('Error fetching article');
       }
     };
   
-
   useEffect(() => {
-    if (id) {
-      setLoading(true);
+    if (!id) return;
 
-      fetchArticles(id);
-      // In a real app, we would fetch this from an API
-      const articleId = parseInt(id);
-      const foundArticle = ARTICLES.find(a => a.id === articleId);
-      
-      if (foundArticle) {
-        setArticle(foundArticle);
-        setError(null);
-      } else {
-        setError("Article not found");
+    let mounted = true;
+
+    (async () => {
+      setLoading(true);
+      try {
+        await fetchArticles(id);
+        if (mounted) setError(null);
+      } catch (err) {
+        if (mounted) setError('Article not found');
+      } finally {
+        if (mounted) setLoading(false);
       }
-      setLoading(false);
-    }
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, [id]);
 
   return (
