@@ -55,6 +55,7 @@ const App = () => (
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/upload-complete" element={<UploadCompletePage />} />
             <Route path="/my-videos" element={<Dashboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/coaches" element={<CoachesPage />} />
             <Route path="/coaches/:username" element={<CoachProfilePage />} />
             <Route path="/coaches/:username/analysis" element={<UploadPage />} />
