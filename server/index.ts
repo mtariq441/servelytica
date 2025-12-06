@@ -2,8 +2,13 @@
 import './env';
 import { createServer as createViteServer } from 'vite';
 import express from 'express';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import { setupCors, setupBodyParser, setupErrorHandler, setupHealthCheck } from './middleware';
 import { setupApiRoutes } from './api';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const PORT = process.env.PORT || 5000;
 const isDev = process.env.NODE_ENV !== 'production';
