@@ -1,5 +1,8 @@
 // Express API middleware for handling database requests
 import fs from 'fs';
+import multer from 'multer';
+import path from 'path';
+import os from 'os';
 import {
   profileRoutes,
   videoRoutes,
@@ -239,6 +242,268 @@ export function setupApiRoutes(app: any) {
     }
   });
 
+  // Configure multer for streaming uploads (no memory buffering)
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const tmpDir = os.tmpdir();
+      cb(null, tmpDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueName = `video_${Date.now()}_${Math.random().toString(36).substring(7)}${path.extname(file.originalname)}`;
+      cb(null, uniqueName);
+    }
+  });
+
+  const upload = multer({ 
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 * 1024 } // 10GB limit - supports large training videos
+  });
+
+  // Chunked video upload endpoint - supports large files (5GB+) via streaming
+  // Uses multipart/form-data instead of base64 to avoid memory issues
+  app.post('/api/videos/upload-chunked', upload.single('video'), async (req: any, res: any) => {
+    try {
+      // AUTHENTICATION: Verify authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        // Clean up uploaded file if authentication fails
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+        return sendError(res, 'Unauthorized: Missing or invalid authorization token', 401);
+      }
+
+      const token = authHeader.substring(7);
+
+      // Verify token with Supabase
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.PUBLIC_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        console.error('[CHUNKED-UPLOAD] Missing Supabase configuration');
+        // Clean up uploaded file
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+        return sendError(res, 'Server configuration error', 500);
+      }
+      
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      
+      if (error || !user) {
+        // Clean up uploaded file if authentication fails
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+        return sendError(res, 'Unauthorized: Invalid token', 401);
+      }
+
+      const { userId, title, description, focusArea, coachIds } = req.body;
+      const uploadedFile = req.file;
+      
+      if (!uploadedFile) {
+        return sendError(res, 'No video file uploaded', 400);
+      }
+      
+      if (!userId) {
+        // Clean up uploaded file
+        if (fs.existsSync(uploadedFile.path)) {
+          fs.unlinkSync(uploadedFile.path);
+        }
+        return sendError(res, 'Missing userId', 400);
+      }
+      
+      // AUTHORIZATION: Verify the userId matches the authenticated user
+      if (userId !== user.id) {
+        // Clean up uploaded file
+        if (fs.existsSync(uploadedFile.path)) {
+          fs.unlinkSync(uploadedFile.path);
+        }
+        return sendError(res, 'Forbidden: Cannot upload video for another user', 403);
+      }
+      
+      // Validate userId format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(userId)) {
+        // Clean up uploaded file
+        if (fs.existsSync(uploadedFile.path)) {
+          fs.unlinkSync(uploadedFile.path);
+        }
+        return sendError(res, 'Invalid userId format', 400);
+      }
+      
+      const tempFilePath = uploadedFile.path;
+      const fileName = uploadedFile.originalname;
+      const fileSize = uploadedFile.size;
+      
+      console.log(`[CHUNKED-UPLOAD] Processing video: ${fileName} (${fileSize} bytes)`);
+      console.log(`[CHUNKED-UPLOAD] Temporary path: ${tempFilePath}`);
+      
+      // Create permanent storage directory
+      const storageDir = path.join(process.cwd(), 'uploaded_videos', userId);
+      if (!fs.existsSync(storageDir)) {
+        fs.mkdirSync(storageDir, { recursive: true });
+      }
+      
+      // Create filename with timestamp
+      const timestamp = Date.now();
+      const ext = fileName.split('.').pop() || 'bin';
+      const permanentFileName = `${timestamp}.${ext}`;
+      const permanentFilePath = path.join(storageDir, permanentFileName);
+      const relativePath = `uploaded_videos/${userId}/${permanentFileName}`;
+      
+      // Move file from temp to permanent storage
+      try {
+        fs.renameSync(tempFilePath, permanentFilePath);
+        console.log(`[CHUNKED-UPLOAD] Moved file to permanent storage: ${permanentFilePath}`);
+      } catch (moveError) {
+        console.error(`[CHUNKED-UPLOAD] Failed to move file to permanent storage:`, moveError);
+        // Clean up temp file if move failed
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+        throw new Error(`Failed to save video file: ${moveError instanceof Error ? moveError.message : String(moveError)}`);
+      }
+      
+      // Create video record in database with permanent path
+      const videoData = {
+        userId: userId,
+        filePath: relativePath,
+        fileName: fileName,
+        fileSize: fileSize,
+        title: title || null,
+        description: description || null,
+        focusArea: focusArea || null,
+        analyzed: false,
+        uploadedAt: new Date()
+      };
+      
+      console.log(`[CHUNKED-UPLOAD] Video data to insert:`, videoData);
+      
+      let createdVideo;
+      try {
+        createdVideo = await videoRoutes.createVideo(videoData);
+      } catch (dbError) {
+        console.error(`[CHUNKED-UPLOAD] Database error creating video:`, dbError);
+        // Clean up permanent file if DB insert failed
+        if (fs.existsSync(permanentFilePath)) {
+          fs.unlinkSync(permanentFilePath);
+        }
+        throw new Error(`Failed to create video record: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
+      }
+      
+      if (!createdVideo) {
+        // Clean up permanent file if DB insert returned null
+        if (fs.existsSync(permanentFilePath)) {
+          fs.unlinkSync(permanentFilePath);
+        }
+        throw new Error('Failed to create video record in database - returned null');
+      }
+      
+      console.log(`[CHUNKED-UPLOAD] Video record created with ID: ${createdVideo.id}`);
+      
+      // AUTOMATIC AI-BASED MOTION ANALYSIS
+      // Skip analysis for files larger than 100MB to avoid memory issues
+      const MAX_ANALYSIS_SIZE = 100 * 1024 * 1024; // 100MB
+      let motionAnalysis = null;
+      
+      if (fileSize <= MAX_ANALYSIS_SIZE) {
+        try {
+          const { analyzeMotionAndGameVideo } = await import('./motion-analysis');
+          console.log(`[CHUNKED-UPLOAD] Starting automatic motion analysis for video ${createdVideo.id}...`);
+          
+          motionAnalysis = await analyzeMotionAndGameVideo(permanentFilePath, {
+            title,
+            description,
+            focusArea
+          });
+          
+          console.log(`[CHUNKED-UPLOAD] Motion analysis completed. Score: ${motionAnalysis.overallScore}`);
+          
+          // Update video with analysis results
+          await videoRoutes.updateVideo(createdVideo.id, {
+            analyzed: true
+          });
+          
+          createdVideo.analyzed = true;
+          
+          console.log(`[CHUNKED-UPLOAD] Video analysis results saved to database`);
+        } catch (analysisError) {
+          console.warn('[CHUNKED-UPLOAD] Warning: Automatic motion analysis failed, but video was created:', analysisError);
+          // Don't fail the upload - video is still created successfully
+        }
+      } else {
+        console.log(`[CHUNKED-UPLOAD] Skipping automatic analysis for large file (${fileSize} bytes > ${MAX_ANALYSIS_SIZE} bytes)`);
+      }
+      
+      // Assign coaches if provided
+      if (coachIds) {
+        try {
+          const coachIdsArray = typeof coachIds === 'string' ? JSON.parse(coachIds) : coachIds;
+          
+          if (Array.isArray(coachIdsArray) && coachIdsArray.length > 0) {
+            const { db } = await import('./db');
+            const { videoCoaches } = await import('@shared/schema');
+            
+            const coachAssignments = coachIdsArray.map((coachId: string) => ({
+              videoId: createdVideo.id,
+              coachId: coachId,
+              status: 'pending'
+            }));
+            
+            console.log(`[CHUNKED-UPLOAD] Assigning coaches:`, coachAssignments);
+            await db.insert(videoCoaches).values(coachAssignments);
+            console.log(`[CHUNKED-UPLOAD] Coaches assigned successfully`);
+          }
+        } catch (coachError) {
+          console.warn('[CHUNKED-UPLOAD] Warning: Failed to assign coaches, but video was created:', coachError);
+          // Don't fail the entire upload if coach assignment fails
+        }
+      }
+      
+      // Note: temp file was already moved to permanent storage via fs.renameSync
+      // This cleanup is a failsafe in case the rename didn't work
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+          console.log(`[CHUNKED-UPLOAD] Cleaned up remaining temporary file`);
+        }
+      } catch (cleanupError) {
+        console.warn('[CHUNKED-UPLOAD] Failed to clean up temporary file:', cleanupError);
+      }
+      
+      const response = {
+        success: true,
+        video: createdVideo,
+        filePath: relativePath,
+        permanentPath: permanentFilePath,
+        fileName: fileName,
+        size: fileSize,
+        analysis: motionAnalysis || null,
+        analysisSkipped: fileSize > MAX_ANALYSIS_SIZE
+      };
+      
+      console.log(`[CHUNKED-UPLOAD] Upload complete, sending response`);
+      sendJson(res, response, 201);
+    } catch (error) {
+      console.error('[CHUNKED-UPLOAD] Error uploading file:', error);
+      console.error('[CHUNKED-UPLOAD] Stack trace:', error instanceof Error ? error.stack : 'N/A');
+      
+      // Clean up temp file if it exists
+      if (req.file && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (cleanupError) {
+          console.warn('[CHUNKED-UPLOAD] Failed to clean up temp file after error:', cleanupError);
+        }
+      }
+      
+      sendError(res, error, 500);
+    }
+  });
+
   app.post('/api/videos', async (req: any, res: any) => {
     try {
       const video = await videoRoutes.createVideo(req.body);
@@ -360,6 +625,35 @@ export function setupApiRoutes(app: any) {
       const coaches = await coachRoutes.searchCoaches(req.params.query, limit);
       sendJson(res, coaches);
     } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // Get coach's assigned videos from videoCoaches table
+  app.get('/api/coaches/:coachId/videos', async (req: any, res: any) => {
+    try {
+      const coachId = req.params.coachId;
+      const { db } = await import('./db');
+      const { videoCoaches, videos } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      // Query videoCoaches table and join with videos table
+      const coachVideos = await db
+        .select({
+          videoId: videoCoaches.videoId,
+          coachId: videoCoaches.coachId,
+          status: videoCoaches.status,
+          assignedAt: videoCoaches.assignedAt,
+          video: videos
+        })
+        .from(videoCoaches)
+        .leftJoin(videos, eq(videoCoaches.videoId, videos.id))
+        .where(eq(videoCoaches.coachId, coachId));
+      
+      console.log(`[COACH-VIDEOS] Found ${coachVideos.length} videos for coach ${coachId}`);
+      sendJson(res, coachVideos);
+    } catch (error) {
+      console.error('[COACH-VIDEOS] Error fetching coach videos:', error);
       sendError(res, error);
     }
   });
@@ -955,6 +1249,108 @@ export function setupApiRoutes(app: any) {
       }, 201);
     } catch (error) {
       console.error('Admin setup error:', error);
+      sendError(res, error, 500);
+    }
+  });
+
+  // Serve uploaded videos from permanent storage
+  // SECURITY: Requires authentication via Authorization header
+  app.get('/api/videos/stream/:userId/:fileName', async (req: any, res: any) => {
+    try {
+      const { userId, fileName } = req.params;
+      
+      // Verify authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return sendError(res, 'Unauthorized: Missing or invalid authorization token', 401);
+      }
+      
+      // Extract and verify the token (Supabase JWT)
+      const token = authHeader.substring(7);
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabaseUrl = process.env.SUPABASE_URL || process.env.PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.PUBLIC_SUPABASE_ANON_KEY;
+        
+        if (!supabaseUrl || !supabaseKey) {
+          console.error('[VIDEO-STREAM] Missing Supabase configuration');
+          return sendError(res, 'Server configuration error', 500);
+        }
+        
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        
+        if (error || !user) {
+          return sendError(res, 'Unauthorized: Invalid token', 401);
+        }
+        
+        // Verify user has access to this video (must be owner or coach)
+        const { db } = await import('./db');
+        const { videos, videoCoaches } = await import('@shared/schema');
+        const { eq, or, and } = await import('drizzle-orm');
+        
+        const videoRecord = await db.query.videos.findFirst({
+          where: and(
+            eq(videos.userId, userId),
+            eq(videos.fileName, fileName)
+          )
+        });
+        
+        if (!videoRecord) {
+          return sendError(res, 'Video not found', 404);
+        }
+        
+        // Check if user is owner or assigned coach
+        const isOwner = videoRecord.userId === user.id;
+        const coachAssignment = await db.query.videoCoaches.findFirst({
+          where: and(
+            eq(videoCoaches.videoId, videoRecord.id),
+            eq(videoCoaches.coachId, user.id)
+          )
+        });
+        
+        if (!isOwner && !coachAssignment) {
+          return sendError(res, 'Forbidden: You do not have access to this video', 403);
+        }
+      } catch (authError) {
+        console.error('[VIDEO-STREAM] Authentication error:', authError);
+        return sendError(res, 'Authentication failed', 401);
+      }
+      
+      const videoPath = path.join(process.cwd(), 'uploaded_videos', userId, fileName);
+      
+      if (!fs.existsSync(videoPath)) {
+        return sendError(res, 'Video file not found on disk', 404);
+      }
+      
+      const stat = fs.statSync(videoPath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+      
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunksize = (end - start) + 1;
+        const file = fs.createReadStream(videoPath, { start, end });
+        const head = {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': 'video/mp4',
+        };
+        res.writeHead(206, head);
+        file.pipe(res);
+      } else {
+        const head = {
+          'Content-Length': fileSize,
+          'Content-Type': 'video/mp4',
+        };
+        res.writeHead(200, head);
+        fs.createReadStream(videoPath).pipe(res);
+      }
+    } catch (error) {
+      console.error('[VIDEO-STREAM] Error streaming video:', error);
       sendError(res, error, 500);
     }
   });

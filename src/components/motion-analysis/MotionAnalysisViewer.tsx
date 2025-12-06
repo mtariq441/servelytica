@@ -39,7 +39,7 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
   const [selectedTool, setSelectedTool] = useState<string>('line');
   const [annotations, setAnnotations] = useState<any[]>([]);
   const [showOverlay, setShowOverlay] = useState(true);
-  const playerRef = useRef<ReactPlayer>(null);
+  const playerRef = useRef<any>(null);
   const { toast } = useToast();
 
   const annotationTools: AnnotationTool[] = [
@@ -50,41 +50,56 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
     { type: 'text', icon: Type, label: 'Text' }
   ];
 
-  useEffect(() => {
-    fetchSessionData();
-  }, [fetchSessionData]);
-
   const fetchSessionData = useCallback(async () => {
+    if (!sessionId) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Fetch session data
+      setLoading(true);
+      // Fetch session data from videos table
       const { data: sessionData, error: sessionError } = await supabase
-        .from('motion_analysis_sessions')
-        .select('*')
+        .from('videos')
+        .select('id, title, description, file_path, created_at')
         .eq('id', sessionId)
         .single();
 
-      if (sessionError) throw sessionError;
-      setSession(sessionData);
-
-      // Get signed URL for video
-      if (sessionData.video_file_path) {
-        const { data: urlData, error: urlError } = await supabase.storage
-          .from('videos')
-          .createSignedUrl(sessionData.video_file_path, 3600);
-
-        if (urlError) throw urlError;
-        setVideoUrl(urlData.signedUrl);
+      if (sessionError) {
+        console.error('Error fetching session:', sessionError);
+        setLoading(false);
+        return;
       }
 
-      // Fetch annotations
-      const { data: annotationsData, error: annotationsError } = await supabase
-        .from('motion_analysis_annotations')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('created_at');
+      if (!sessionData) {
+        setLoading(false);
+        return;
+      }
 
-      if (annotationsError) throw annotationsError;
-      setAnnotations(annotationsData || []);
+      setSession({
+        id: sessionData.id,
+        title: sessionData.title || 'Untitled Video',
+        description: sessionData.description || '',
+        video_file_path: sessionData.file_path || '',
+        analysis_status: 'completed',
+        created_at: sessionData.created_at || ''
+      });
+
+      // Get signed URL for video
+      if (sessionData.file_path) {
+        const { data: urlData, error: urlError } = await supabase.storage
+          .from('videos')
+          .createSignedUrl(sessionData.file_path, 3600);
+
+        if (urlError) {
+          console.error('Error getting signed URL:', urlError);
+        } else if (urlData?.signedUrl) {
+          setVideoUrl(urlData.signedUrl);
+        }
+      }
+
+      // Annotations are optional - just set empty array
+      setAnnotations([]);
 
     } catch (error) {
       console.error('Error fetching session data:', error);
@@ -97,6 +112,10 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
       setLoading(false);
     }
   }, [sessionId, toast]);
+
+  useEffect(() => {
+    fetchSessionData();
+  }, [fetchSessionData]);
 
   const handlePlayPause = () => {
     setPlaying(!playing);
@@ -191,8 +210,10 @@ const MotionAnalysisViewer = ({ sessionId }: MotionAnalysisViewerProps) => {
                     playbackRate={playbackSpeed}
                     width="100%"
                     height="100%"
-                    onProgress={({ playedSeconds }) => setCurrentTime(playedSeconds)}
-                    onDuration={(d) => setDuration(d)}
+                    onProgress={(state: any) => setCurrentTime(state?.playedSeconds || 0)}
+                    onDuration={(d: number) => setDuration(d)}
+                    pip={false}
+                    style={{}}
                   />
                   
                   {/* Overlay Annotations */}

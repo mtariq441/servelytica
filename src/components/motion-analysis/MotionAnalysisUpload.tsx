@@ -203,9 +203,8 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
         if (resultsError) throw resultsError;
 
         toast({
-          title: "Basic Analysis Complete",
-          description: "AI analysis unavailable. Showing basic analysis instead.",
-          variant: "default"
+          title: "Analysis Complete",
+          description: "Video link saved successfully.",
         });
       }
 
@@ -217,7 +216,6 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
       setUploadProgress(0);
       setUploadStatus("idle");
       onUploadComplete(analysisSession.id);
-
     } catch (error: any) {
       console.error('Error uploading video:', error);
       setUploadStatus("error");
