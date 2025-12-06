@@ -56,7 +56,7 @@ export class MotionAnalysisService {
     videoFilePath?: string
   ): Promise<MotionAnalysisSession | null> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('motion_analysis_sessions')
         .insert({
           user_id: userId,
@@ -70,7 +70,7 @@ export class MotionAnalysisService {
         .single();
 
       if (error) throw error;
-      return data;
+      return data as MotionAnalysisSession;
     } catch (error) {
       console.error('Error creating motion analysis session:', error);
       return null;
@@ -82,14 +82,14 @@ export class MotionAnalysisService {
    */
   static async getUserSessions(userId: string): Promise<MotionAnalysisSession[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('motion_analysis_sessions')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return data || [];
+      return (data || []) as MotionAnalysisSession[];
     } catch (error) {
       console.error('Error fetching user sessions:', error);
       return [];
@@ -101,14 +101,14 @@ export class MotionAnalysisService {
    */
   static async getSession(sessionId: string): Promise<MotionAnalysisSession | null> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('motion_analysis_sessions')
         .select('*')
         .eq('id', sessionId)
         .single();
 
       if (error) throw error;
-      return data;
+      return data as MotionAnalysisSession;
     } catch (error) {
       console.error('Error fetching session:', error);
       return null;
@@ -123,7 +123,7 @@ export class MotionAnalysisService {
     status: MotionAnalysisSession['analysis_status']
   ): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('motion_analysis_sessions')
         .update({ 
           analysis_status: status,
@@ -144,7 +144,7 @@ export class MotionAnalysisService {
    */
   static async saveResults(results: Omit<MotionAnalysisResult, 'id'>[]): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('motion_analysis_results')
         .insert(results);
 
@@ -161,14 +161,14 @@ export class MotionAnalysisService {
    */
   static async getSessionResults(sessionId: string): Promise<MotionAnalysisResult[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('motion_analysis_results')
         .select('*')
         .eq('session_id', sessionId)
         .order('analysis_type');
 
       if (error) throw error;
-      return data || [];
+      return (data || []) as MotionAnalysisResult[];
     } catch (error) {
       console.error('Error fetching session results:', error);
       return [];
@@ -180,7 +180,7 @@ export class MotionAnalysisService {
    */
   static async saveFrameAnalysis(frame: Omit<MotionAnalysisFrame, 'id'>): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('motion_analysis_frames')
         .insert(frame);
 
@@ -197,14 +197,14 @@ export class MotionAnalysisService {
    */
   static async getSessionFrames(sessionId: string): Promise<MotionAnalysisFrame[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('motion_analysis_frames')
         .select('*')
         .eq('session_id', sessionId)
         .order('timestamp_ms');
 
       if (error) throw error;
-      return data || [];
+      return (data || []) as MotionAnalysisFrame[];
     } catch (error) {
       console.error('Error fetching session frames:', error);
       return [];
@@ -216,7 +216,7 @@ export class MotionAnalysisService {
    */
   static async saveAnnotation(annotation: Omit<MotionAnalysisAnnotation, 'id'>): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('motion_analysis_annotations')
         .insert(annotation);
 
@@ -233,14 +233,14 @@ export class MotionAnalysisService {
    */
   static async getSessionAnnotations(sessionId: string): Promise<MotionAnalysisAnnotation[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('motion_analysis_annotations')
         .select('*')
         .eq('session_id', sessionId)
         .order('created_at');
 
       if (error) throw error;
-      return data || [];
+      return (data || []) as MotionAnalysisAnnotation[];
     } catch (error) {
       console.error('Error fetching session annotations:', error);
       return [];
@@ -252,7 +252,7 @@ export class MotionAnalysisService {
    */
   static async deleteSession(sessionId: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('motion_analysis_sessions')
         .delete()
         .eq('id', sessionId);
@@ -280,7 +280,6 @@ export class MotionAnalysisService {
 
       console.log('Starting AI analysis with Gemini for video:', videoUrl);
       
-      // Perform AI analysis using Gemini Vision
       const analysisResult = await GeminiAnalysisService.analyzeVideoTechnique(videoUrl, 'table-tennis');
       
       return analysisResult;
@@ -357,7 +356,6 @@ export class MotionAnalysisService {
         return [];
       }
 
-      // Reconstruct the analysis result from database records
       const analysisResult: VideoAnalysisResult = {
         overallScore: results.find(r => r.analysis_type === 'overall')?.score || 0,
         strokeAnalysis: {

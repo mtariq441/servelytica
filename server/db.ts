@@ -4,15 +4,15 @@ import * as schema from "@shared/schema";
 
 // Get database URL from Replit PostgreSQL
 const getDatabaseUrl = () => {
-  // If DATABASE_URL is set, use it
-  if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL;
-  }
-
-  // Otherwise, construct from PG* environment variables
+  // Prioritize Replit PostgreSQL (PG* environment variables)
   const { PGUSER, PGPASSWORD, PGHOST, PGPORT, PGDATABASE } = process.env;
   if (PGUSER && PGPASSWORD && PGHOST && PGPORT && PGDATABASE) {
     return `postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}`;
+  }
+
+  // Fall back to DATABASE_URL if PG* vars not available (skip if it points to Supabase)
+  if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('supabase')) {
+    return process.env.DATABASE_URL;
   }
 
   throw new Error('Database credentials not found. Please ensure Replit PostgreSQL is configured.');

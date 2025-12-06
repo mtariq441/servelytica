@@ -205,7 +205,7 @@ const VideoUploadForm = ({
       );
 
       if (!result.success) {
-        throw new Error(result.error || "Upload failed");
+        throw new Error((result as { success: boolean; error?: string }).error || "Upload failed");
       }
 
       toast({

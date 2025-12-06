@@ -544,7 +544,7 @@ export function setupApiRoutes(app: any) {
       console.log(`[ANALYSIS] Starting analysis for video ${videoId} at path ${videoPath}`);
 
       const { analyzeVideo } = await import('./gemini-video-analysis');
-      const analysisResult = await analyzeVideo(videoPath, sport);
+      const analysisResult = await analyzeVideo(videoPath);
 
       // Update video record with analysis status
       await videoRoutes.updateVideo(videoId, { analyzed: true });
@@ -643,7 +643,7 @@ export function setupApiRoutes(app: any) {
           videoId: videoCoaches.videoId,
           coachId: videoCoaches.coachId,
           status: videoCoaches.status,
-          assignedAt: videoCoaches.assignedAt,
+          assignedAt: videoCoaches.createdAt,
           video: videos
         })
         .from(videoCoaches)
