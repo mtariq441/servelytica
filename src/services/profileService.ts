@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { apiCall, profileApi, videoApi } from './apiClient';
 
 export interface ProfileData {
   id: string;
@@ -32,60 +32,78 @@ export interface VideoData {
   uploaded_at: string | null;
   analyzed: boolean | null;
   focus_area: string | null;
-  user_id?: string; // The player who uploaded the video
+  user_id?: string;
   coaches?: Array<{ id: string; display_name: string; status?: string; }>;
-  student_name?: string; // For coaches to see which student uploaded the video
-  status?: string; // For coach-specific status
+  student_name?: string;
+  status?: string;
+}
+
+async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const response = await fetch('/api/auth/user', { credentials: 'include' });
+    if (!response.ok) return null;
+    const user = await response.json();
+    return user?.id || null;
+  } catch {
+    return null;
+  }
 }
 
 export class ProfileService {
   static async getCurrentUserProfile(): Promise<ProfileData | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    const userId = await getCurrentUserId();
+    if (!userId) return null;
 
-    // Fetch profile data
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-
-    if (profileError) {
-      console.error('Error fetching profile:', profileError);
+    const profileResult = await profileApi.getProfile(userId);
+    if (!profileResult.success || !profileResult.data) {
+      console.error('Error fetching profile:', profileResult.error);
       return null;
     }
 
-    // Fetch user role
-    const { data: roleData, error: roleError } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
+    const roleResult = await apiCall<any>(`/user-roles/${userId}`);
+    const role = roleResult.success ? roleResult.data?.role : null;
 
-    if (roleError) {
-      console.error('Error fetching user role:', roleError);
-    }
-
+    const profile = profileResult.data as any;
     return {
-      ...profile,
-      role: roleData?.role || null
+      id: profile.id,
+      user_id: profile.userId,
+      username: profile.username,
+      display_name: profile.displayName,
+      avatar_url: profile.avatarUrl,
+      bio: profile.bio,
+      phone: profile.phone,
+      location: profile.location,
+      playing_experience: profile.playingExperience,
+      preferred_play_style: profile.preferredPlayStyle,
+      member_since: profile.memberSince,
+      profile_image: profile.profileImage,
+      role: role || null
     };
   }
 
   static async updateProfile(profileData: Partial<ProfileData>): Promise<boolean> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    const userId = await getCurrentUserId();
+    if (!userId) return false;
 
-    // Exclude role from profile update since it's stored in user_roles table
     const { role, ...profileUpdateData } = profileData;
 
-    const { error } = await supabase
-      .from('profiles')
-      .update(profileUpdateData)
-      .eq('user_id', user.id);
+    const serverData = {
+      username: profileUpdateData.username,
+      displayName: profileUpdateData.display_name,
+      avatarUrl: profileUpdateData.avatar_url,
+      bio: profileUpdateData.bio,
+      phone: profileUpdateData.phone,
+      location: profileUpdateData.location,
+      playingExperience: profileUpdateData.playing_experience,
+      preferredPlayStyle: profileUpdateData.preferred_play_style,
+      memberSince: profileUpdateData.member_since,
+      profileImage: profileUpdateData.profile_image,
+    };
 
-    if (error) {
-      console.error('Error updating profile:', error);
+    const result = await profileApi.updateProfile(userId, serverData);
+
+    if (!result.success) {
+      console.error('Error updating profile:', result.error);
       return false;
     }
 
@@ -93,71 +111,61 @@ export class ProfileService {
   }
 
   static async getPerformanceMetrics(): Promise<PerformanceMetric[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+    const userId = await getCurrentUserId();
+    if (!userId) return [];
 
-    const { data, error } = await supabase
-      .from('performance_metrics')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true });
+    const result = await apiCall<any[]>(`/performance-metrics?userId=${userId}`);
 
-    if (error) {
-      console.error('Error fetching performance metrics:', error);
+    if (!result.success) {
+      console.error('Error fetching performance metrics:', result.error);
       return [];
     }
 
-    return data || [];
+    return result.data || [];
   }
 
   static async getUserVideos(): Promise<VideoData[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+    const userId = await getCurrentUserId();
+    if (!userId) return [];
 
     try {
-      // Get videos uploaded by the current user
-      const { data: videos, error: videosError } = await supabase
-        .from('videos')
-        .select('id, title, file_name, file_path, uploaded_at, analyzed, focus_area, user_id')
-        .eq('user_id', user.id)
-        .order('uploaded_at', { ascending: false });
-
-      if (videosError) {
-        console.error('Error fetching videos:', videosError);
+      const videosResult = await videoApi.getVideos(userId);
+      if (!videosResult.success || !videosResult.data) {
+        console.error('Error fetching videos:', videosResult.error);
         return [];
       }
 
+      const videos = videosResult.data as any[];
       if (!videos || videos.length === 0) {
         return [];
       }
 
-      // Get coach assignments for all videos
       const videoIds = videos.map(video => video.id);
-      const { data: coachAssignments, error: coachError } = await supabase
-        .from('video_coaches')
-        .select('video_id, coach_id, status, profiles!coach_id(id, display_name)')
-        .in('video_id', videoIds);
+      const coachAssignmentsResult = await apiCall<any[]>(`/video-coaches?videoIds=${videoIds.join(',')}`);
 
-      if (coachError) {
-        console.error('Error fetching coach assignments:', coachError);
-        return videos.map(v => ({ ...v, coaches: [] }));
+      const videoMap = new Map<string, any[]>();
+      if (coachAssignmentsResult.success && coachAssignmentsResult.data) {
+        coachAssignmentsResult.data.forEach((assignment: any) => {
+          if (!videoMap.has(assignment.videoId)) {
+            videoMap.set(assignment.videoId, []);
+          }
+          videoMap.get(assignment.videoId)?.push({
+            id: assignment.coachId,
+            display_name: assignment.coachName || 'Unknown Coach',
+            status: assignment.status,
+          });
+        });
       }
 
-      // Map coaches to videos
-      const videoMap = new Map<string, any[]>();
-      coachAssignments?.forEach(assignment => {
-        if (!videoMap.has(assignment.video_id)) {
-          videoMap.set(assignment.video_id, []);
-        }
-        videoMap.get(assignment.video_id)?.push({
-          id: assignment.coach_id,
-          display_name: (assignment.profiles as any)?.display_name || 'Unknown Coach',
-          status: assignment.status,
-        });
-      });
-
       return videos.map(v => ({
-        ...v,
+        id: v.id,
+        title: v.title,
+        file_name: v.fileName,
+        file_path: v.filePath,
+        uploaded_at: v.uploadedAt,
+        analyzed: v.analyzed,
+        focus_area: v.focusArea,
+        user_id: v.userId,
         coaches: videoMap.get(v.id) || [],
       })) as VideoData[];
     } catch (error) {
@@ -167,69 +175,27 @@ export class ProfileService {
   }
 
   static async getAssignedVideos(): Promise<VideoData[]> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+    const userId = await getCurrentUserId();
+    if (!userId) return [];
 
     try {
-      // Get videos assigned to the current coach
-      const { data: assignedVideos, error: assignedError } = await supabase
-        .from('video_coaches')
-        .select(`
-          video_id,
-          videos(
-            id,
-            title,
-            file_name,
-            file_path,
-            uploaded_at,
-            analyzed,
-            focus_area,
-            user_id
-          )
-        `)
-        .eq('coach_id', user.id);
-
-      if (assignedError) {
-        console.error('Error fetching assigned videos:', assignedError);
+      const result = await apiCall<any[]>(`/coaches/${userId}/videos`);
+      if (!result.success || !result.data) {
+        console.error('Error fetching assigned videos:', result.error);
         return [];
       }
 
-      if (!assignedVideos || assignedVideos.length === 0) {
-        return [];
-      }
-
-      // Get video user IDs to fetch student names
-      const videoUserIds = assignedVideos.map(assignment => (assignment.videos as any).user_id);
-      const { data: studentProfiles, error: profileError } = await supabase
-        .from('profiles')
-        .select('user_id, display_name, username')
-        .in('user_id', videoUserIds);
-
-      if (profileError) {
-        console.error('Error fetching student profiles:', profileError);
-      }
-
-      // Create a map of user_id to student names
-      const studentMap = new Map<string, string>();
-      studentProfiles?.forEach(profile => {
-        studentMap.set(profile.user_id, profile.display_name || profile.username || 'Unknown Student');
-      });
-
-      // Transform the data
-      return assignedVideos.map(assignment => {
-        const video = assignment.videos as any;
-        return {
-          id: video.id,
-          title: video.title,
-          file_name: video.file_name,
-          file_path: video.file_path,
-          uploaded_at: video.uploaded_at,
-          analyzed: video.analyzed,
-          focus_area: video.focus_area,
-          user_id: video.user_id,
-          student_name: studentMap.get(video.user_id) || 'Unknown Student'
-        };
-      });
+      return result.data.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        file_name: item.fileName,
+        file_path: item.filePath,
+        uploaded_at: item.uploadedAt,
+        analyzed: item.analyzed,
+        focus_area: item.focusArea,
+        user_id: item.userId,
+        student_name: item.studentName || 'Unknown Student'
+      }));
     } catch (error) {
       console.error('Error fetching assigned videos:', error);
       return [];
@@ -238,63 +204,27 @@ export class ProfileService {
 
   static async getPendingVideos(coachId?: string): Promise<VideoData[]> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
+      const currentUserId = coachId || await getCurrentUserId();
+      if (!currentUserId) return [];
 
-      const currentCoachId = coachId || user.id;
-      console.log('getPendingVideos called for coach:', currentCoachId);
-
-      // Fetch videos assigned to the coach that are still pending
-      const { data: pendingVideos, error: pendingError } = await supabase
-        .from('video_coaches')
-        .select(`*, videos(*)`)
-        .eq('coach_id', currentCoachId)
-        .eq('status', 'pending');
-
-      if (pendingError) {
-        console.error('Error fetching pending videos for coach:', pendingError);
+      const result = await apiCall<any[]>(`/coaches/${currentUserId}/videos?status=pending`);
+      if (!result.success || !result.data) {
+        console.error('Error fetching pending videos:', result.error);
         return [];
       }
 
-      if (!pendingVideos || pendingVideos.length === 0) {
-        return [];
-      }
-
-      // Get video user IDs to fetch student names
-      const videoUserIds = pendingVideos.map(assignment => (assignment.videos as any).user_id).filter(Boolean);
-      const studentMap = new Map<string, string>();
-
-      if (videoUserIds.length > 0) {
-        const { data: studentProfiles, error: profileError } = await supabase
-          .from('profiles')
-          .select('user_id, display_name, username')
-          .in('user_id', videoUserIds);
-
-        if (!profileError && studentProfiles) {
-          studentProfiles.forEach(profile => {
-            studentMap.set(profile.user_id, profile.display_name || profile.username || 'Unknown Student');
-          });
-        }
-      }
-
-      // Transform the data
-      const result = pendingVideos.map(assignment => {
-        const video = assignment.videos as any;
-        return {
-          id: video.id,
-          title: video.title,
-          file_name: video.file_name,
-          file_path: video.file_path,
-          uploaded_at: video.uploaded_at,
-          analyzed: false,
-          focus_area: video.focus_area,
-          user_id: video.user_id,
-          student_name: studentMap.get(video.user_id) || 'Unknown Student',
-          status: assignment.status
-        };
-      });
-
-      return result;
+      return result.data.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        file_name: item.fileName,
+        file_path: item.filePath,
+        uploaded_at: item.uploadedAt,
+        analyzed: false,
+        focus_area: item.focusArea,
+        user_id: item.userId,
+        student_name: item.studentName || 'Unknown Student',
+        status: item.status
+      }));
     } catch (error) {
       console.error('Error fetching pending videos:', error);
       return [];
@@ -303,116 +233,40 @@ export class ProfileService {
 
   static async getAnalyzedVideos(coachId?: string): Promise<VideoData[]> {
     try {
-      if (coachId) {
-        // Fetch videos assigned to the specific coach that have been completed (feedback provided)
-        const { data: assignedVideos, error: assignedError } = await supabase
-          .from('video_coaches')
-          .select(`*, videos(*)`)
-          .eq('coach_id', coachId)
-          .eq('status', 'completed'); // Only fetch completed videos
+      const currentUserId = coachId || await getCurrentUserId();
+      if (!currentUserId) return [];
 
-        if (assignedError) {
-          console.error('Error fetching assigned videos for coach:', assignedError);
+      const result = await apiCall<any[]>(`/coaches/${currentUserId}/videos?status=completed`);
+      if (!result.success || !result.data) {
+        const playerResult = await apiCall<any[]>(`/videos/with-feedback?userId=${currentUserId}`);
+        if (!playerResult.success || !playerResult.data) {
+          console.error('Error fetching analyzed videos:', playerResult.error);
           return [];
         }
-
-        if (!assignedVideos || assignedVideos.length === 0) {
-          return [];
-        }
-
-        // Get video user IDs to fetch student names
-        const videoUserIds = assignedVideos.map(assignment => (assignment.videos as any).user_id).filter(Boolean);
-        const studentMap = new Map<string, string>();
-
-        if (videoUserIds.length > 0) {
-          const { data: studentProfiles, error: profileError } = await supabase
-            .from('profiles')
-            .select('user_id, display_name, username')
-            .in('user_id', videoUserIds);
-
-          if (!profileError && studentProfiles) {
-            studentProfiles.forEach(profile => {
-              studentMap.set(profile.user_id, profile.display_name || profile.username || 'Unknown Student');
-            });
-          }
-        }
-
-        // Transform the data
-        const result = assignedVideos.map(assignment => {
-          const video = assignment.videos as any;
-          return {
-            id: video.id,
-            title: video.title,
-            file_name: video.file_name,
-            file_path: video.file_path,
-            uploaded_at: video.uploaded_at,
-            analyzed: true, // These are completed videos so always analyzed
-            focus_area: video.focus_area,
-            user_id: video.user_id,
-            student_name: studentMap.get(video.user_id) || 'Unknown Student',
-            status: assignment.status
-          };
-        });
-
-        return result;
-      } else {
-        // Original behavior: Check user role and fetch based on role
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return [];
-
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (roleData?.role === 'coach') {
-          // For coaches without specific ID: get all their completed videos
-          return this.getAnalyzedVideos(user.id);
-        } else {
-          // For players: get their own videos with feedback
-          const { data: videosWithFeedback, error } = await supabase
-            .from('video_feedback')
-            .select(`
-              video_id,
-              videos!inner(
-                id,
-                title,
-                file_name,
-                file_path,
-                uploaded_at,
-                focus_area,
-                user_id
-              )
-            `)
-            .eq('videos.user_id', user.id);
-
-          if (error) {
-            console.error('Error fetching player videos with feedback:', error);
-            return [];
-          }
-
-          // Get unique videos (in case multiple coaches provided feedback)
-          const uniqueVideos = new Map();
-          videosWithFeedback?.forEach(item => {
-            const video = item.videos as any;
-            if (!uniqueVideos.has(video.id)) {
-              uniqueVideos.set(video.id, {
-                id: video.id,
-                title: video.title,
-                file_name: video.file_name,
-                file_path: video.file_path,
-                uploaded_at: video.uploaded_at,
-                analyzed: true,
-                focus_area: video.focus_area,
-                user_id: video.user_id
-              });
-            }
-          });
-
-          return Array.from(uniqueVideos.values());
-        }
+        return playerResult.data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          file_name: item.fileName,
+          file_path: item.filePath,
+          uploaded_at: item.uploadedAt,
+          analyzed: true,
+          focus_area: item.focusArea,
+          user_id: item.userId,
+        }));
       }
+
+      return result.data.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        file_name: item.fileName,
+        file_path: item.filePath,
+        uploaded_at: item.uploadedAt,
+        analyzed: true,
+        focus_area: item.focusArea,
+        user_id: item.userId,
+        student_name: item.studentName || 'Unknown Student',
+        status: item.status
+      }));
     } catch (error) {
       console.error('Error fetching analyzed videos:', error);
       return [];
@@ -420,18 +274,16 @@ export class ProfileService {
   }
 
   static async createPerformanceMetric(metric: Omit<PerformanceMetric, 'id'>): Promise<boolean> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    const userId = await getCurrentUserId();
+    if (!userId) return false;
 
-    const { error } = await supabase
-      .from('performance_metrics')
-      .insert({
-        ...metric,
-        user_id: user.id
-      });
+    const result = await apiCall('/performance-metrics', {
+      method: 'POST',
+      body: JSON.stringify({ ...metric, userId }),
+    });
 
-    if (error) {
-      console.error('Error creating performance metric:', error);
+    if (!result.success) {
+      console.error('Error creating performance metric:', result.error);
       return false;
     }
 
@@ -439,44 +291,14 @@ export class ProfileService {
   }
 
   static async deleteVideo(videoId: string): Promise<boolean> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    const userId = await getCurrentUserId();
+    if (!userId) return false;
 
     try {
-      // First, get the video to find the file path
-      const { data: video, error: fetchError } = await supabase
-        .from('videos')
-        .select('file_path')
-        .eq('id', videoId)
-        .eq('user_id', user.id)
-        .single();
+      const result = await videoApi.deleteVideo(videoId);
 
-      if (fetchError) {
-        console.error('Error fetching video for deletion:', fetchError);
-        return false;
-      }
-
-      // Delete the file from storage
-      if (video?.file_path) {
-        const { error: storageError } = await supabase.storage
-          .from('videos')
-          .remove([video.file_path]);
-
-        if (storageError) {
-          console.error('Error deleting video file from storage:', storageError);
-          // Continue with database deletion even if storage deletion fails
-        }
-      }
-
-      // Delete the database record
-      const { error: deleteError } = await supabase
-        .from('videos')
-        .delete()
-        .eq('id', videoId)
-        .eq('user_id', user.id);
-
-      if (deleteError) {
-        console.error('Error deleting video from database:', deleteError);
+      if (!result.success) {
+        console.error('Error deleting video:', result.error);
         return false;
       }
 
