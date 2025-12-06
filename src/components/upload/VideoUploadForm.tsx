@@ -11,6 +11,8 @@ import { processVideo } from "@/services/videoProcessing";
 import { supabase } from "@/integrations/supabase/client";
 import DragDropZone from "@/components/upload/DragDropZone";
 
+import { Progress } from "@/components/ui/progress";
+
 interface VideoUploadFormProps {
   uploading: boolean;
   setUploading: (uploading: boolean) => void;
@@ -43,7 +45,8 @@ const VideoUploadForm = ({
   const { toast } = useToast();
   const [userRole, setUserRole] = useState<'coach' | 'player' | null>(null);
   const [loading, setLoading] = useState(true);
-  const [coaches, setCoaches] = useState<Array<{id: string, display_name: string, username: string}>>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [coaches, setCoaches] = useState<Array<{ id: string, display_name: string, username: string }>>([]);
 
   useEffect(() => {
     const checkUserRole = async () => {
@@ -62,7 +65,7 @@ const VideoUploadForm = ({
         setLoading(false);
       }
     };
-    
+
     checkUserRole();
   }, []);
 
@@ -82,7 +85,7 @@ const VideoUploadForm = ({
 
         if (coachRoles && coachRoles.length > 0) {
           const coachUserIds = coachRoles.map(role => role.user_id);
-          
+
           // Then get their profiles
           const { data: coachProfiles, error: profilesError } = await supabase
             .from('profiles')
@@ -122,7 +125,7 @@ const VideoUploadForm = ({
         });
         return;
       }
-      
+
       // Check file size (limit to 5GB)
       if (file.size > 5120 * 1024 * 1024) {
         toast({
@@ -132,9 +135,9 @@ const VideoUploadForm = ({
         });
         return;
       }
-      
+
       setVideoFile(file);
-      
+
       // Process video in the background without showing UI
       try {
         await processVideo(file);
@@ -167,37 +170,104 @@ const VideoUploadForm = ({
     }));
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!videoFile) {
+      toast({
+        title: "Missing file",
+        description: "Please select a video file to upload",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // Import upload service dynamically
+      const { uploadFileToStorage } = await import("@/services/uploadService");
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const result = await uploadFileToStorage(
+        videoFile,
+        user.id,
+        {
+          title: formData.title,
+          description: formData.description,
+          focusArea: formData.focusArea,
+          coachIds: formData.coachIds
+        },
+        (progress) => setUploadProgress(progress)
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || "Upload failed");
+      }
+
+      toast({
+        title: "Upload successful",
+        description: "Your video has been uploaded and submitted for analysis.",
+      });
+
+      // Reset form
+      setVideoFile(null);
+      setFormData({
+        title: "",
+        description: "",
+        focusArea: "",
+        coachIds: []
+      });
+
+      if (onSubmit) onSubmit(e);
+
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      toast({
+        title: "Upload failed",
+        description: error.message || "An error occurred during upload",
+        variant: "destructive"
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6">
       {/* Title */}
       <div className="space-y-2">
         <Label htmlFor="title">Title</Label>
-        <Input 
-          id="title" 
-          name="title" 
-          placeholder="e.g., Tournament Match vs. John Doe" 
+        <Input
+          id="title"
+          name="title"
+          placeholder="e.g., Tournament Match vs. John Doe"
           value={formData.title}
           onChange={handleInputChange}
+          required
         />
       </div>
-      
+
       {/* Description */}
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
-        <Textarea 
-          id="description" 
-          name="description" 
-          placeholder="Describe your match, opponent's playing style, and your current skill level..." 
+        <Textarea
+          id="description"
+          name="description"
+          placeholder="Describe your match, opponent's playing style, and your current skill level..."
           rows={4}
           value={formData.description}
           onChange={handleInputChange}
         />
       </div>
-      
+
       {/* Focus Areas */}
       <div className="space-y-2">
         <Label htmlFor="focusArea">Focus Area</Label>
-        <Select 
+        <Select
           onValueChange={(value) => handleSelectChange("focusArea", value)}
           value={formData.focusArea}
         >
@@ -286,11 +356,11 @@ const VideoUploadForm = ({
           </div>
         </div>
       )}
-      
+
       {/* Submit Button */}
       <div className="pt-4">
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           className="w-full bg-tt-orange hover:bg-orange-600 text-white"
           disabled={uploading || !videoFile}
         >
@@ -307,6 +377,16 @@ const VideoUploadForm = ({
           )}
         </Button>
       </div>
+
+      {uploading && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm text-muted-foreground">
+            <span>Uploading...</span>
+            <span>{uploadProgress}%</span>
+          </div>
+          <Progress value={uploadProgress} className="h-2" />
+        </div>
+      )}
     </form>
   );
 };

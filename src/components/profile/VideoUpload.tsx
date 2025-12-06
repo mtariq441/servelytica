@@ -37,7 +37,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
     coachIds: [] as string[]
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [coaches, setCoaches] = useState<Array<{id: string, display_name: string, username: string}>>([]);
+  const [coaches, setCoaches] = useState<Array<{ id: string, display_name: string, username: string }>>([]);
   const [quotaInfo, setQuotaInfo] = useState<any>(null);
   const [quotaLoading, setQuotaLoading] = useState(false);
 
@@ -55,7 +55,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
   useEffect(() => {
     const checkQuota = async () => {
       if (!user) return;
-      
+
       setQuotaLoading(true);
       try {
         const quota = await VideoSubscriptionService.checkVideoUploadQuota(user.id);
@@ -73,7 +73,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
   useEffect(() => {
     const fetchCoaches = async () => {
       if (!user) return;
-      
+
       try {
         const { data: userProfile, error: profileError } = await supabase
           .from('profiles')
@@ -103,7 +103,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
 
         if (coachRoles && coachRoles.length > 0) {
           const coachUserIds = coachRoles.map((role: any) => role.user_id);
-          
+
           const { data: coachProfiles, error: profilesError } = await supabase
             .from('profiles')
             .select('user_id, display_name, username')
@@ -189,8 +189,8 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
     if (!hasFile && !hasLink) {
       toast({
         title: "Error",
-        description: uploadMode === "file" 
-          ? "Please select a video file" 
+        description: uploadMode === "file"
+          ? "Please select a video file"
           : "Please enter a valid video link",
         variant: "destructive"
       });
@@ -202,42 +202,32 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
     setUploadProgress(0);
 
     try {
-      let videoRecord: any = null;
+      // Import the upload service dynamically to avoid circular dependencies if any
+      const { uploadFileToStorage } = await import("@/services/uploadService");
 
       if (hasFile && selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
-        const filePath = `videos/${user.id}/${Date.now()}.${fileExt}`;
-        
-        setUploadProgress(30);
-        
-        const { error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(filePath, selectedFile, { upsert: false });
+        // Use the new chunked upload service
+        setUploadProgress(10); // Started
 
-        if (uploadError) throw uploadError;
-        
-        setUploadProgress(50);
-
-        const { data: video, error: videoError } = await supabase
-          .from('videos')
-          .insert({
-            user_id: user.id,
-            file_path: filePath,
-            file_name: selectedFile.name,
-            file_size: selectedFile.size,
-            title: formData.title || selectedFile.name,
+        const result = await uploadFileToStorage(
+          selectedFile,
+          user.id,
+          {
+            title: formData.title,
             description: formData.description,
-            focus_area: formData.focusArea,
-            analyzed: false
-          })
-          .select()
-          .single();
+            focusArea: formData.focusArea,
+            coachIds: formData.coachIds
+          }
+        );
 
-        if (videoError) throw videoError;
-        videoRecord = video;
+        if (!result.success) {
+          throw new Error(result.error || "Upload failed");
+        }
+
+        setUploadProgress(100);
       } else if (hasLink) {
         setUploadProgress(50);
-        
+
         const { data: video, error: videoError } = await supabase
           .from('videos')
           .insert({
@@ -253,50 +243,33 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
           .single();
 
         if (videoError) throw videoError;
-        videoRecord = video;
-      }
 
-      // Parallel operations - don't wait sequentially
-      if (videoRecord) {
-        const promises = [];
-        
-        if (formData.coachIds.length > 0) {
-          promises.push(
-            supabase
-              .from('video_coaches')
-              .insert(
-                formData.coachIds.map(coachId => ({
-                  video_id: videoRecord.id,
-                  coach_id: coachId,
-                  status: 'pending'
-                }))
-              )
-          );
-        }
+        // Assign coaches
+        if (formData.coachIds.length > 0 && video) {
+          const { error: coachError } = await supabase
+            .from('video_coaches')
+            .insert(
+              formData.coachIds.map(coachId => ({
+                video_id: video.id,
+                coach_id: coachId,
+                status: 'pending'
+              }))
+            );
 
-        if (quotaInfo?.users_sub_id) {
-          promises.push(
-            supabase
-              .from('users_subscription')
-              .update({
-                usages_count: (quotaInfo?.usages_count || 0) + 1,
-              } as any)
-              .eq('id', quotaInfo?.users_sub_id)
-          );
-        }
-
-        // Execute all parallel operations
-        if (promises.length > 0) {
-          const results = await Promise.all(promises);
-          results.forEach(result => {
-            if (result.error) {
-              console.warn('Post-upload error:', result.error);
-            }
-          });
+          if (coachError) console.warn('Coach assignment error:', coachError);
         }
       }
 
-      setUploadProgress(100);
+      // Update quota if applicable
+      if (quotaInfo?.users_sub_id) {
+        await supabase
+          .from('users_subscription')
+          .update({
+            usages_count: (quotaInfo?.usages_count || 0) + 1,
+          } as any)
+          .eq('id', quotaInfo?.users_sub_id);
+      }
+
       setUploadStatus("complete");
 
       toast({
@@ -304,6 +277,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
         description: "Your video has been submitted for analysis"
       });
 
+      // Reset form
       setFormData({
         title: "",
         description: "",
@@ -316,7 +290,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
       setIsLinkValid(false);
       setLinkMetadata(null);
 
-      // Immediate completion without delay
+      // Completion
       setUploading(false);
       setUploadProgress(0);
       setUploadStatus("idle");
@@ -356,7 +330,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
               </p>
               <p className={`text-xs ${quotaInfo.canUpload ? 'text-green-600' : 'text-red-600'}`}>
                 {quotaInfo?.usages_count}/{quotaInfo.videosLimit} videos used this month
-                {!quotaInfo.canUpload && quotaInfo.daysRemaining > 0 && 
+                {!quotaInfo.canUpload && quotaInfo.daysRemaining > 0 &&
                   ` • Next upload in ${quotaInfo.daysRemaining} days`
                 }
               </p>
@@ -403,7 +377,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
                 <TabsTrigger value="link">Video Link</TabsTrigger>
                 <TabsTrigger value="file">Upload File</TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="link" className="mt-4">
                 <VideoLinkInput
                   value={formData.videoLink}
@@ -412,7 +386,7 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
                   disabled={uploading}
                 />
               </TabsContent>
-              
+
               <TabsContent value="file" className="mt-4">
                 <DragDropZone
                   onFileSelect={handleFileSelect}
@@ -510,9 +484,9 @@ const VideoUpload = ({ onUploadSuccess }: VideoUploadProps) => {
             />
           )}
 
-          <Button 
-            onClick={handleUpload} 
-            disabled={uploading || !formData.title.trim() || formData.coachIds.length === 0 || 
+          <Button
+            onClick={handleUpload}
+            disabled={uploading || !formData.title.trim() || formData.coachIds.length === 0 ||
               (uploadMode === "file" ? !selectedFile : !formData.videoLink)}
             className="w-full"
           >

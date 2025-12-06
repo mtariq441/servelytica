@@ -21,14 +21,14 @@ export const VideoFeedbackForm = ({ video, onSuccess, onCancel }: VideoFeedbackF
   const [loading, setLoading] = useState(false);
   const [existingFeedback, setExistingFeedback] = useState<any>(null);
   const [checkingFeedback, setCheckingFeedback] = useState(true);
-  const [selectedFiles, setSelectedFiles] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[] | null>(null);
   const { toast } = useToast();
 
   // Check if feedback already exists for this video-coach combination
   const checkExistingFeedback = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) return;
 
       const { data: feedback } = await supabase
@@ -52,7 +52,7 @@ export const VideoFeedbackForm = ({ video, onSuccess, onCancel }: VideoFeedbackF
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!feedbackText.trim()) {
       toast({
         title: "Error",
@@ -64,7 +64,7 @@ export const VideoFeedbackForm = ({ video, onSuccess, onCancel }: VideoFeedbackF
 
     if (rating === 0) {
       toast({
-        title: "Error", 
+        title: "Error",
         description: "Please select a rating",
         variant: "destructive",
       });
@@ -72,49 +72,49 @@ export const VideoFeedbackForm = ({ video, onSuccess, onCancel }: VideoFeedbackF
     }
 
     setLoading(true);
-    
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         throw new Error("User not authenticated");
       }
 
 
-    // Upload selected files to Supabase Storage if any
-    const uploadedFiles: string[] = [];
-    if (selectedFiles && selectedFiles.length > 0) {
-      for (const file of selectedFiles) {
-        const fileExt = file.name.split('.').pop();
-        const filePath = `feedback/${video.id}/${Date.now()}_${file.name}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('documents')
-        .upload(filePath, file, {
-          contentType: file.type,
-          upsert: false,
-        });
-        if (uploadError) {
-        toast({
-          title: "Error",
-          description: `Failed to upload file: ${file.name}`,
-          variant: "destructive",
-        });
-        continue;
+      // Upload selected files to Supabase Storage if any
+      const uploadedFiles: string[] = [];
+      if (selectedFiles && selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const fileExt = file.name.split('.').pop();
+          const filePath = `feedback/${video.id}/${Date.now()}_${file.name}`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(filePath, file, {
+              contentType: file.type,
+              upsert: false,
+            });
+          if (uploadError) {
+            toast({
+              title: "Error",
+              description: `Failed to upload file: ${file.name}`,
+              variant: "destructive",
+            });
+            continue;
+          }
+          uploadedFiles.push(filePath);
         }
-        uploadedFiles.push(filePath);
       }
-    }
 
       // Submit feedback
       const { error: feedbackError } = await supabase
         .from('video_feedback')
         .insert({
-          video_id: video.video_id,
+          video_id: video.id,
           coach_id: user.id,
-          player_id: video.player_id,
+          player_id: video.user_id,
           feedback_text: feedbackText.trim(),
           rating: rating,
-          video_coaches_id: video.id,
+          // video_coaches_id: video.id,
         });
 
       if (feedbackError) throw feedbackError;
@@ -123,7 +123,7 @@ export const VideoFeedbackForm = ({ video, onSuccess, onCancel }: VideoFeedbackF
       const { error: statusError, data: videoData } = await supabase
         .from('video_coaches')
         .update({ status: 'completed' })
-        // .eq('video_id', video.id)
+        .eq('video_id', video.id)
         .eq('coach_id', user.id);
 
 
@@ -237,22 +237,22 @@ export const VideoFeedbackForm = ({ video, onSuccess, onCancel }: VideoFeedbackF
             </Select>
           </div>
 
-        {/* File select input for .txt, .pdf, .doc, .docx, images */}
-        <div>
-          <Label htmlFor="files">Attach Files (optional)</Label>
-          <input
-            id="files"
-            type="file"
-            multiple
-            accept=".txt,.pdf,.doc,.docx,image/*"
-            className="mt-1 block w-full"
-            onChange={(e) => {
-              if (e.target.files) {
-            setSelectedFiles(Array.from(e.target.files));
-              }
-            }}
-          />
-        </div>
+          {/* File select input for .txt, .pdf, .doc, .docx, images */}
+          <div>
+            <Label htmlFor="files">Attach Files (optional)</Label>
+            <input
+              id="files"
+              type="file"
+              multiple
+              accept=".txt,.pdf,.doc,.docx,image/*"
+              className="mt-1 block w-full"
+              onChange={(e) => {
+                if (e.target.files) {
+                  setSelectedFiles(Array.from(e.target.files));
+                }
+              }}
+            />
+          </div>
 
           <div>
             <Label htmlFor="feedback">Feedback</Label>

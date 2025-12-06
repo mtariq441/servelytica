@@ -46,20 +46,64 @@ export class GeminiAnalysisService {
   }
 
   /**
-   * Analyze a video for table tennis technique using Gemini Vision
-   * Accepts video URL or base64 encoded video data
+   * Analyze a video for table tennis technique using Backend API (for large files)
+   * or Gemini Vision directly (for small files/blobs)
    */
   static async analyzeVideoTechnique(
     videoInput: string | Blob,
-    sport: string = 'table-tennis'
+    sport: string = 'table-tennis',
+    videoId?: string // Optional videoId for backend analysis
   ): Promise<VideoAnalysisResult> {
     try {
+      // If videoInput is a string path starting with /uploads/ and we have a videoId, use backend
+      if (typeof videoInput === 'string' && videoInput.startsWith('/uploads/') && videoId) {
+        console.log('Using backend analysis for local file:', videoInput);
+
+        // Convert relative path to absolute path if needed, but backend expects relative or absolute
+        // The backend `gemini-video-analysis.ts` expects a path that `fs` can read.
+        // If we send `/uploads/xxx`, the backend needs to resolve it.
+        // Our backend route `app.post('/api/videos/:videoId/analyze')` takes `videoPath`.
+        // We should send the absolute path if possible, or relative to server root.
+        // But the frontend only knows `/uploads/xxx`.
+        // The backend `server/index.ts` serves `/uploads` from `path.resolve(__dirname, 'uploads')`.
+        // So we should probably send the filename or construct the path on backend.
+        // However, `server/api.ts` takes `videoPath` directly.
+        // Let's assume we send the full path relative to server root or let backend handle it.
+        // Actually, `server/chunkUpload.ts` returns `filePath` as `/uploads/xxx.mp4` AND `absolutePath`.
+        // If we stored `absolutePath` in DB, we could use it.
+        // But we likely stored `/uploads/xxx.mp4`.
+        // So we need to tell backend to resolve it.
+        // For now, let's send the path we have. The backend `analyzeVideo` checks `fs.existsSync(videoPath)`.
+        // If we send `/uploads/xxx.mp4`, `fs.existsSync` will fail unless it's absolute or relative to CWD.
+        // We might need to fix the backend to resolve `/uploads/` paths.
+
+        const response = await fetch(`/api/videos/${videoId}/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            videoPath: videoInput, // Backend needs to handle this path
+            sport
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Backend analysis failed');
+        }
+
+        const data = await response.json();
+        return data.analysis;
+      }
+
+      // Fallback to client-side for Blobs or external URLs (if small enough)
       const client = this.initializeClient();
       const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
       // Prepare the prompt for table tennis analysis
       const analysisPrompt = `You are an expert table tennis coach analyzing a video of a player's technique. 
-
+      
 Please analyze this ${sport} video and provide comprehensive feedback on the following aspects:
 
 1. **Stroke Technique** - Evaluate the forehand/backhand strokes, grip, swing path, follow-through
@@ -148,7 +192,7 @@ Respond in JSON format with this structure:
         // Handle Blob input
         const arrayBuffer = await videoInput.arrayBuffer();
         const base64 = this.arrayBufferToBase64(arrayBuffer);
-        
+
         result = await model.generateContent([
           {
             text: analysisPrompt,
@@ -166,7 +210,7 @@ Respond in JSON format with this structure:
 
       // Parse the response
       const responseText = result.response.text();
-      
+
       // Extract JSON from the response
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {

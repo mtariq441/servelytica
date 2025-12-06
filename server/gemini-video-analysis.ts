@@ -1,7 +1,8 @@
 // Gemini Video Analysis Service
 // Integrated with Gemini AI for advanced video analysis capabilities
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleAIFileManager } from "@google/generative-ai/server";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -9,7 +10,8 @@ if (!process.env.GEMINI_API_KEY) {
   throw new Error("GEMINI_API_KEY environment variable is not set");
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
 export interface VideoAnalysisResult {
   overallScore: number;
@@ -24,7 +26,7 @@ export interface VideoAnalysisResult {
 
 /**
  * Analyze a video file using Gemini AI
- * Provides comprehensive feedback on technique, form, and performance
+ * Uses File API for large files
  */
 export async function analyzeVideo(videoPath: string): Promise<VideoAnalysisResult> {
   try {
@@ -33,18 +35,31 @@ export async function analyzeVideo(videoPath: string): Promise<VideoAnalysisResu
       throw new Error(`Video file not found: ${videoPath}`);
     }
 
-    // Read video file
-    const videoBytes = fs.readFileSync(videoPath);
-    const base64Video = videoBytes.toString("base64");
+    console.log(`[GEMINI] Uploading video to Gemini: ${videoPath}`);
 
-    // Determine MIME type from file extension
-    const ext = path.extname(videoPath).toLowerCase();
-    let mimeType = "video/mp4";
-    if (ext === ".webm") {
-      mimeType = "video/webm";
-    } else if (ext === ".avi") {
-      mimeType = "video/avi";
+    // Upload the file to Gemini
+    const uploadResult = await fileManager.uploadFile(videoPath, {
+      mimeType: "video/mp4", // Assuming mp4, or detect
+      displayName: path.basename(videoPath),
+    });
+
+    console.log(`[GEMINI] Uploaded file: ${uploadResult.file.name}`);
+
+    // Wait for the file to be active
+    let file = await fileManager.getFile(uploadResult.file.name);
+    while (file.state === "PROCESSING") {
+      console.log(`[GEMINI] Processing video...`);
+      await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds
+      file = await fileManager.getFile(uploadResult.file.name);
     }
+
+    if (file.state === "FAILED") {
+      throw new Error("Video processing failed by Gemini");
+    }
+
+    console.log(`[GEMINI] Video active. Generating content...`);
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // Use 1.5 Pro for better video understanding
 
     // Create analysis prompt
     const analysisPrompt = `You are an expert sports coach specializing in table tennis, tennis, badminton, and similar racquet sports.
@@ -56,6 +71,7 @@ Analyze this video and provide a comprehensive performance evaluation. Focus on:
 4. Key strengths observed
 5. Areas for improvement
 6. Specific recommendations for training
+7. Feedback
 
 Please structure your response as JSON with the following format:
 {
@@ -69,35 +85,29 @@ Please structure your response as JSON with the following format:
   "feedback": "<overall feedback and summary>"
 }`;
 
-    // Call Gemini API with video
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: [
-        {
-          inlineData: {
-            data: base64Video,
-            mimeType: mimeType,
-          },
-        },
-        analysisPrompt,
-      ],
-      config: {
-        responseMimeType: "application/json",
+    const result = await model.generateContent([
+      {
+        fileData: {
+          mimeType: file.mimeType,
+          fileUri: file.uri
+        }
       },
-    });
+      { text: analysisPrompt }
+    ]);
 
-    // Parse response
-    const responseText = response.text;
-    if (!responseText) {
-      throw new Error("Empty response from Gemini API");
-    }
+    const response = await result.response;
+    const responseText = response.text();
+
+    console.log(`[GEMINI] Analysis complete.`);
+
+    // Clean up file from Gemini (optional, but good practice)
+    // await fileManager.deleteFile(uploadResult.file.name);
 
     // Extract JSON from response
     let analysisData: VideoAnalysisResult;
     try {
       analysisData = JSON.parse(responseText);
     } catch (parseError) {
-      // Try to extract JSON from response text if it contains additional text
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         analysisData = JSON.parse(jsonMatch[0]);
@@ -106,12 +116,8 @@ Please structure your response as JSON with the following format:
       }
     }
 
-    // Validate response structure
-    if (!analysisData.overallScore || !analysisData.technique) {
-      throw new Error("Invalid response structure from Gemini API");
-    }
-
     return analysisData;
+
   } catch (error) {
     console.error("Error analyzing video with Gemini:", error);
     throw new Error(
@@ -122,98 +128,86 @@ Please structure your response as JSON with the following format:
 
 /**
  * Get quick feedback on a video without full analysis
- * Useful for real-time feedback scenarios
  */
 export async function getQuickFeedback(videoPath: string): Promise<string> {
+  // Similar implementation using File API for consistency
   try {
     if (!fs.existsSync(videoPath)) {
       throw new Error(`Video file not found: ${videoPath}`);
     }
 
-    const videoBytes = fs.readFileSync(videoPath);
-    const base64Video = videoBytes.toString("base64");
-
-    const ext = path.extname(videoPath).toLowerCase();
-    let mimeType = "video/mp4";
-    if (ext === ".webm") {
-      mimeType = "video/webm";
-    } else if (ext === ".avi") {
-      mimeType = "video/avi";
-    }
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: [
-        {
-          inlineData: {
-            data: base64Video,
-            mimeType: mimeType,
-          },
-        },
-        "Provide a brief 2-3 sentence feedback on the technique and form shown in this sports video. Focus on the most important observations.",
-      ],
+    const uploadResult = await fileManager.uploadFile(videoPath, {
+      mimeType: "video/mp4",
+      displayName: "Quick Feedback Video",
     });
 
-    return response.text || "Unable to generate feedback";
+    let file = await fileManager.getFile(uploadResult.file.name);
+    while (file.state === "PROCESSING") {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      file = await fileManager.getFile(uploadResult.file.name);
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Faster model
+
+    const result = await model.generateContent([
+      {
+        fileData: {
+          mimeType: file.mimeType,
+          fileUri: file.uri
+        }
+      },
+      { text: "Provide a brief 2-3 sentence feedback on the technique and form shown in this sports video." }
+    ]);
+
+    return result.response.text();
   } catch (error) {
     console.error("Error getting quick feedback:", error);
-    throw new Error(
-      `Quick feedback failed: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
+    throw new Error(`Quick feedback failed: ${error}`);
   }
 }
 
 /**
- * Compare technique across multiple frames/moments
+ * Compare technique across multiple videos
  */
 export async function compareVideoSegments(
   videoPaths: string[],
   description: string
 ): Promise<string> {
   try {
-    // Validate all files exist
-    for (const videoPath of videoPaths) {
-      if (!fs.existsSync(videoPath)) {
-        throw new Error(`Video file not found: ${videoPath}`);
-      }
-    }
+    const fileUris = [];
 
-    // Build contents array with all videos
-    const contents: any[] = [];
     for (const videoPath of videoPaths) {
-      const videoBytes = fs.readFileSync(videoPath);
-      const base64Video = videoBytes.toString("base64");
+      if (!fs.existsSync(videoPath)) throw new Error(`File not found: ${videoPath}`);
 
-      const ext = path.extname(videoPath).toLowerCase();
-      let mimeType = "video/mp4";
-      if (ext === ".webm") {
-        mimeType = "video/webm";
-      } else if (ext === ".avi") {
-        mimeType = "video/avi";
+      const uploadResult = await fileManager.uploadFile(videoPath, {
+        mimeType: "video/mp4",
+        displayName: path.basename(videoPath),
+      });
+
+      let file = await fileManager.getFile(uploadResult.file.name);
+      while (file.state === "PROCESSING") {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        file = await fileManager.getFile(uploadResult.file.name);
       }
 
-      contents.push({
-        inlineData: {
-          data: base64Video,
-          mimeType: mimeType,
-        },
+      fileUris.push({
+        fileData: {
+          mimeType: file.mimeType,
+          fileUri: file.uri
+        }
       });
     }
 
-    contents.push(
-      `Compare these video segments and provide analysis: ${description}`
-    );
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: contents,
-    });
+    const result = await model.generateContent([
+      ...fileUris,
+      { text: `Compare these video segments and provide analysis: ${description}` }
+    ]);
 
-    return response.text || "Unable to generate comparison";
+    return result.response.text();
   } catch (error) {
-    console.error("Error comparing video segments:", error);
-    throw new Error(
-      `Video comparison failed: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
+    console.error("Error comparing videos:", error);
+    throw new Error(`Video comparison failed: ${error}`);
   }
 }

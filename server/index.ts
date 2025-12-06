@@ -1,4 +1,5 @@
 // Main Express server entry point
+import './env';
 import { createServer as createViteServer } from 'vite';
 import express from 'express';
 import { setupCors, setupBodyParser, setupErrorHandler, setupHealthCheck } from './middleware';
@@ -17,13 +18,20 @@ async function createApp() {
 
   // Setup API routes
   setupApiRoutes(app);
+  // Chunked upload route
+  app.use('/api', (await import('./chunkUpload')).default);
+
+  // Serve uploaded files statically
+  const path = await import('path');
+  const uploadsDir = path.resolve(__dirname, 'uploads');
+  app.use('/uploads', express.static(uploadsDir));
 
   // In development, integrate Vite
   if (isDev) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
     });
-    
+
     app.use(vite.middlewares);
   }
 

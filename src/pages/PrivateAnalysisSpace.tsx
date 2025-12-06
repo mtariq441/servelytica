@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { 
-  Users, 
-  Video, 
-  MessageSquare, 
-  Calendar, 
-  Clock, 
+import {
+  Users,
+  Video,
+  MessageSquare,
+  Calendar,
+  Clock,
   CheckCircle,
   AlertCircle,
   Plus,
@@ -45,7 +45,7 @@ const PrivateAnalysisSpace = () => {
 
   const fetchData = useCallback(async () => {
     if (!user || !role) return;
-    
+
     setLoading(true);
     try {
       // Fetch relationships
@@ -91,6 +91,61 @@ const PrivateAnalysisSpace = () => {
     }
   }, [user, fetchData]);
 
+  // Real-time subscriptions
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`dashboard:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'analysis_requests',
+          filter: role === 'coach' ? `coach_id=eq.${user.id}` : `student_id=eq.${user.id}`
+        },
+        () => {
+          // Refresh data on any request change
+          fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'private_analysis_sessions',
+          filter: role === 'coach' ? `coach_id=eq.${user.id}` : `student_id=eq.${user.id}`
+        },
+        () => {
+          // Refresh data on any session change
+          fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'analysis_notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          setNotifications(prev => [payload.new, ...prev]);
+          toast({
+            title: "New Notification",
+            description: payload.new.message
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, role, fetchData, toast]);
+
   if (!user && !authLoading) {
     return <Navigate to="/auth" replace />;
   }
@@ -102,7 +157,7 @@ const PrivateAnalysisSpace = () => {
     if (!title) return;
 
     const description = prompt("Enter session description (optional):");
-    
+
     const session = await PrivateAnalysisService.createSession(
       user.id,
       studentId,
@@ -139,12 +194,12 @@ const PrivateAnalysisSpace = () => {
     if (session) {
       // Update request status
       await PrivateAnalysisService.updateRequestStatus(requestId, 'accepted', session.id);
-      
+
       toast({
         title: "Request Accepted",
         description: "Analysis session has been created."
       });
-      
+
       navigate(`/analysis-session/${session.id}`);
     }
   };
@@ -640,7 +695,7 @@ const PrivateAnalysisSpace = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Analysis Space</h1>
           <p className="mt-2 text-gray-600">
-            {role === 'coach' 
+            {role === 'coach'
               ? 'Interactive workspace - Manage students, create analysis sessions, and track progress'
               : 'Interactive workspace - Collaborate with coaches, track your progress, and get personalized feedback'}
           </p>

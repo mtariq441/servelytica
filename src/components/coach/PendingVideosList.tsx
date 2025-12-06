@@ -56,6 +56,11 @@ export const PendingVideosList = ({ coachId }: PendingVideosListProps) => {
 
   const getVideoUrl = async (video: VideoData): Promise<string | null> => {
     try {
+      // Handle local uploads
+      if (video.file_path && video.file_path.startsWith('/uploads/')) {
+        return video.file_path;
+      }
+
       const { data, error } = await supabase.storage
         .from('videos')
         .createSignedUrl(video.file_path, 3600);
@@ -85,7 +90,7 @@ export const PendingVideosList = ({ coachId }: PendingVideosListProps) => {
           description: "Failed to load video",
           variant: "destructive",
         });
-      } 
+      }
     } catch (error) {
       console.error('Error opening video:', error);
       toast({
@@ -181,46 +186,47 @@ export const PendingVideosList = ({ coachId }: PendingVideosListProps) => {
             <TableBody>
               {videos.map((video) => {
                 return (
-                <TableRow key={video.id}>
-                  <TableCell className="font-medium">
-                    {video?.title || video?.file_name}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {(video as any).description || "-"}
-                  </TableCell>
-                  <TableCell>{video?.student_name || "Unknown"}</TableCell>
-                  <TableCell>
-                    {video.uploaded_at ? new Date(video.uploaded_at).toLocaleDateString() : 'Unknown'}
-                  </TableCell>
-                  <TableCell>{video.focus_area || "General"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="bg-yellow-100 text-yellow-700">
-                      {video.status || "Pending"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openVideoModal(video)}
-                        disabled={videoUrlLoading}
-                      >
-                        <Play className="h-3 w-3 mr-1" />
-                        Play
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openFeedbackForm(video)}
-                      >
-                        <MessageSquare className="h-3 w-3 mr-1" />
-                        Analyze
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )})}
+                  <TableRow key={video.id}>
+                    <TableCell className="font-medium">
+                      {video?.title || video?.file_name}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {(video as any).description || "-"}
+                    </TableCell>
+                    <TableCell>{video?.student_name || "Unknown"}</TableCell>
+                    <TableCell>
+                      {video.uploaded_at ? new Date(video.uploaded_at).toLocaleDateString() : 'Unknown'}
+                    </TableCell>
+                    <TableCell>{video.focus_area || "General"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-yellow-100 text-yellow-700">
+                        {video.status || "Pending"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openVideoModal(video)}
+                          disabled={videoUrlLoading}
+                        >
+                          <Play className="h-3 w-3 mr-1" />
+                          Play
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openFeedbackForm(video)}
+                        >
+                          <MessageSquare className="h-3 w-3 mr-1" />
+                          Analyze
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </CardContent>

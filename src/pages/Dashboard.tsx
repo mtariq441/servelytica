@@ -20,7 +20,7 @@ const videoThumbnail = '/lovable-uploads/video_thumbnail.jpg';
 import { VideoFeedbackDisplay } from "@/components/feedback/VideoFeedbackDisplay";
 
 const Dashboard = () => {
-  const {user, loading: authLoading} = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   // Hooks must be declared before any early returns to preserve call order
   const [activeTab, setActiveTab] = useState("uploads");
@@ -38,14 +38,14 @@ const Dashboard = () => {
     const fetchVideos = async () => {
       try {
         const { data, error } = await supabase
-        .from('video_feedback')
-        .select(`
+          .from('video_feedback')
+          .select(`
             *, 
             video: video_coaches_id (*)
             `)
           .eq('player_id', user?.id)
           .order('created_at', { ascending: false });
-          setVideos((data as any) || []);
+        setVideos((data as any) || []);
       } catch (error) {
         console.error('Error fetching videos:', error);
       } finally {
@@ -74,11 +74,11 @@ const Dashboard = () => {
     return <Navigate to="/auth" replace />;
   }
 
-  
+
 
   // Filter videos for uploaded games (all videos)
   const uploadedGames = videos;
-  
+
   // Filter videos for coach analysis (only analyzed videos)
   const coachAnalyses = videos.filter((video: any) => video?.video?.status === "completed");
 
@@ -87,6 +87,11 @@ const Dashboard = () => {
       if (!video?.video?.file_path) {
         console.error('No file path for video:', video.id);
         return null;
+      }
+
+      // Handle local uploads
+      if (video.video.file_path.startsWith('/uploads/')) {
+        return `http://localhost:5000${video.video.file_path}`;
       }
 
       // Create a signed URL for private bucket access
@@ -110,14 +115,14 @@ const Dashboard = () => {
     window.open(link, '_blank');
   }
 
-    const openFeedbackDisplay = (video: any) => {
-      setSelectedVideo(video);
-      setFeedbackDisplayOpen(true);
-    };
+  const openFeedbackDisplay = (video: any) => {
+    setSelectedVideo(video);
+    setFeedbackDisplayOpen(true);
+  };
 
   const openVideoModal = async (video: any) => {
     // console.log({video})
-      setSelectedVideo(video);
+    setSelectedVideo(video);
     // setVideoUrlLoading(true);
     // try {
     //   const videoUrl = await getVideoUrl(video);
@@ -163,7 +168,7 @@ const Dashboard = () => {
       setDeleteLoading(null);
     }
   };
-  
+
   const renderStatusBadge = (analyzed: boolean | null) => {
     if (analyzed) {
       return <Badge variant="default" className="bg-green-100 text-green-800 border-green-200"><CheckCircle className="h-3 w-3 mr-1" /> Analyzed</Badge>;
@@ -176,7 +181,7 @@ const Dashboard = () => {
     const [videoError, setVideoError] = useState(false);
     const [thumbnailLoading, setThumbnailLoading] = useState(false);
     const [signedUrl, setSignedUrl] = useState<string | null>(null);
-    
+
     // useEffect(() => {
     //   const fetchVideoUrl = async () => {
     //     try {
@@ -192,7 +197,7 @@ const Dashboard = () => {
 
     //   fetchVideoUrl();
     // }, [video.id]);
-    
+
     // If no video URL or video failed to load, show placeholder
     if (!signedUrl || videoError) {
       const placeholders = [
@@ -203,7 +208,7 @@ const Dashboard = () => {
         "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&q=80"
       ];
       const index = video.id.length % placeholders.length;
-      
+
       return (
         <Card className="overflow-hidden hover-scale">
           <div className="relative h-48">
@@ -212,10 +217,10 @@ const Dashboard = () => {
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
               </div>
             ) : (
-              <img 
+              <img
                 // src={placeholders[index]}
                 src={videoThumbnail}
-                alt={video?.video?.title || video.file_name} 
+                alt={video?.video?.title || video.file_name}
                 className="w-full h-full object-cover"
               />
             )}
@@ -223,7 +228,7 @@ const Dashboard = () => {
               {renderStatusBadge(video?.video?.status === 'completed')}
             </div>
             {!thumbnailLoading && (
-              <div 
+              <div
                 className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
                 // onClick={() => openVideoModal(video)}
                 onClick={() => openVideo(video?.video?.video_link)}
@@ -246,11 +251,11 @@ const Dashboard = () => {
           <CardContent>
             <div className="flex justify-between items-center">
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="flex items-center gap-1"
-                //   onClick={() => openVideoModal(video)}
+                  //   onClick={() => openVideoModal(video)}
                   onClick={() => openVideo(video?.video?.video_link)}
                   disabled={videoUrlLoading || thumbnailLoading}
                 >
@@ -269,9 +274,9 @@ const Dashboard = () => {
               </div>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
                     disabled={deleteLoading === video.id}
                   >
@@ -291,7 +296,7 @@ const Dashboard = () => {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction 
+                    <AlertDialogAction
                       onClick={() => handleDeleteVideo(video.id)}
                       className="bg-red-600 hover:bg-red-700"
                     >
@@ -316,7 +321,7 @@ const Dashboard = () => {
           ) : (
             <>
 
-            {/* <video 
+              {/* <video 
               src={signedUrl}
               preload="metadata"
               className="w-full h-full object-cover cursor-pointer"
@@ -330,17 +335,17 @@ const Dashboard = () => {
                 //   onLoadStart={() => setThumbnailLoading(true)}
                 onCanPlay={() => setThumbnailLoading(false)}
                 /> */}
-                <ReactPlayer src={(selectedVideo as any)?.video?.video_link} />
-                </>
+              <ReactPlayer src={(selectedVideo as any)?.video?.video_link} />
+            </>
           )}
           <div className="absolute top-2 right-2">
             {renderStatusBadge(video?.feedback_text)}
           </div>
           {!thumbnailLoading && (
-            <div 
+            <div
               className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
-            //   onClick={() => openVideoModal(video)}
-            onClick={() => openVideo(video?.video?.video_link)}
+              //   onClick={() => openVideoModal(video)}
+              onClick={() => openVideo(video?.video?.video_link)}
             >
               {videoUrlLoading ? (
                 <Loader2 className="h-16 w-16 text-white animate-spin" />
@@ -360,10 +365,10 @@ const Dashboard = () => {
         <CardContent>
           <div className="flex justify-between items-center">
             <div className="flex gap-2">
-                
-              <Button 
-                variant="outline" 
-                size="sm" 
+
+              <Button
+                variant="outline"
+                size="sm"
                 className="flex items-center gap-1"
                 // onClick={() => openVideoModal(video)}
                 onClick={() => openVideo(video?.video?.video_link)}
@@ -384,9 +389,9 @@ const Dashboard = () => {
             </div>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                   disabled={deleteLoading === video.id}
                 >
@@ -406,7 +411,7 @@ const Dashboard = () => {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction 
+                  <AlertDialogAction
                     onClick={() => handleDeleteVideo(video.id)}
                     className="bg-red-600 hover:bg-red-700"
                   >
@@ -424,7 +429,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      
+
       <main className="flex-grow py-6 md:py-12 px-3 md:px-4">
         <div className="max-w-6xl mx-auto">
           <div className="mb-6 md:mb-8">
@@ -433,14 +438,42 @@ const Dashboard = () => {
               View your uploaded game videos and coach feedback
             </p>
           </div>
-          
+
+          {/* Quick Access Card for Private Analysis Space */}
+          <div className="mb-6">
+            <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold mb-2 text-blue-900">Private Analysis Space</h2>
+                    <p className="text-gray-700 mb-4">Collaborate with your coach through dedicated analysis sessions</p>
+                    <div className="flex gap-4 text-sm">
+                      <div className="flex items-center gap-1">
+                        <FileVideo className="h-4 w-4 text-blue-600" />
+                        <span>{coachAnalyses.length} analyzed videos</span>
+                      </div>
+                    </div>
+                  </div>
+                  <Link to="/analysis-space">
+                    <Button
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      Open Analysis Space
+                      <ArrowUpRight className="h-4 w-4 ml-2" />
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <Tabs defaultValue="uploads" className="w-full" onValueChange={setActiveTab}>
               <TabsList>
                 <TabsTrigger value="uploads">Uploaded Games</TabsTrigger>
                 <TabsTrigger value="analyses">Coach Analyses</TabsTrigger>
               </TabsList>
-              
+
               <div className="mt-8">
                 <TabsContent value="uploads" className="space-y-6">
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -452,7 +485,7 @@ const Dashboard = () => {
                       </Button>
                     </Link>
                   </div>
-                  
+
                   {isLoading ? (
                     <div className="text-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tt-blue mx-auto"></div>
@@ -481,12 +514,12 @@ const Dashboard = () => {
                     </Card>
                   )}
                 </TabsContent>
-                
+
                 <TabsContent value="analyses" className="space-y-6">
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <h2 className="text-lg md:text-xl font-semibold text-tt-blue">Your Coach Analyses</h2>
                   </div>
-                  
+
                   {isLoading ? (
                     <div className="text-center py-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tt-blue mx-auto"></div>
@@ -520,7 +553,7 @@ const Dashboard = () => {
           </div>
         </div>
       </main>
-      
+
       {/* Video Modal */}
       <VideoModal
         isOpen={videoModalOpen}
@@ -529,36 +562,36 @@ const Dashboard = () => {
         videoUrl={selectedVideoUrl}
       />
 
-       {/* Feedback Display */}
-            {selectedVideo && feedbackDisplayOpen && (
-              <div className="fixed !mt-0 inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                <div className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Video Feedback</CardTitle> 
-                      <CardDescription>
-                        Feedback for: {(selectedVideo as any)?.video?.title || (selectedVideo as any).file_name}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <VideoFeedbackDisplay video={(selectedVideo as any)?.video} videoId={(selectedVideo as any)?.video?.id} />
-                      <div className="mt-4 flex justify-end">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setFeedbackDisplayOpen(false);
-                            setSelectedVideo(null);
-                          }}
-                        >
-                          Close
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+      {/* Feedback Display */}
+      {selectedVideo && feedbackDisplayOpen && (
+        <div className="fixed !mt-0 inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <Card>
+              <CardHeader>
+                <CardTitle>Video Feedback</CardTitle>
+                <CardDescription>
+                  Feedback for: {(selectedVideo as any)?.video?.title || (selectedVideo as any).file_name}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <VideoFeedbackDisplay video={(selectedVideo as any)?.video} videoId={(selectedVideo as any)?.video?.id} />
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setFeedbackDisplayOpen(false);
+                      setSelectedVideo(null);
+                    }}
+                  >
+                    Close
+                  </Button>
                 </div>
-              </div>
-            )}
-      
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   );

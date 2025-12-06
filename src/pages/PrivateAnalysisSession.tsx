@@ -10,11 +10,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { 
-  Play, 
-  Pause, 
-  SkipForward, 
-  SkipBack, 
+import {
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
   Maximize2,
   Circle,
   Square,
@@ -59,7 +59,7 @@ const PrivateAnalysisSession = () => {
   const { role } = useUserRole();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const playerRef = useRef<ReactPlayer>(null);
+  const playerRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Session data
@@ -104,15 +104,9 @@ const PrivateAnalysisSession = () => {
     { type: 'freehand', icon: Edit, label: 'Freehand' }
   ];
 
-  useEffect(() => {
-    if (sessionId && user) {
-      fetchSessionData();
-    }
-  }, [sessionId, user, fetchSessionData]);
-
   const fetchSessionData = useCallback(async () => {
     if (!sessionId) return;
-    
+
     setLoading(true);
     try {
       // Fetch session details
@@ -126,7 +120,7 @@ const PrivateAnalysisSession = () => {
         navigate('/analysis-space');
         return;
       }
-      
+
       // Check access permissions
       if (sessionData.coach_id !== user?.id && sessionData.student_id !== user?.id) {
         toast({
@@ -137,7 +131,7 @@ const PrivateAnalysisSession = () => {
         navigate('/analysis-space');
         return;
       }
-      
+
       setSession(sessionData);
 
       // Fetch related data in parallel
@@ -171,16 +165,84 @@ const PrivateAnalysisSession = () => {
     }
   }, [sessionId, user, toast, navigate]);
 
+  useEffect(() => {
+    if (sessionId && user) {
+      fetchSessionData();
+    }
+  }, [sessionId, user, fetchSessionData]);
+
+  // Real-time subscriptions
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const channel = supabase
+      .channel(`session:${sessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'session_comments',
+          filter: `session_id=eq.${sessionId}`
+        },
+        async (payload) => {
+          if (payload.eventType === 'INSERT') {
+            // Fetch the new comment with user details
+            const { data } = await supabase
+              .from('session_comments')
+              .select(`*, user:user_id(user_id, username, display_name, avatar_url)`)
+              .eq('id', payload.new.id)
+              .single();
+
+            if (data) {
+              setComments(prev => [...prev, data]);
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'session_annotations',
+          filter: `session_id=eq.${sessionId}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setAnnotations(prev => [...prev, payload.new]);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'private_analysis_sessions',
+          filter: `id=eq.${sessionId}`
+        },
+        (payload) => {
+          setSession(prev => ({ ...prev, ...payload.new }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId]);
+
   const selectVideo = async (video: any) => {
     setSelectedVideo(video);
-    
+
     // Get signed URL for video
     if (video.video_file_path) {
       try {
         const { data, error } = await supabase.storage
           .from('videos')
           .createSignedUrl(video.video_file_path, 3600);
-        
+
         if (error) throw error;
         setVideoUrl(data.signedUrl);
       } catch (error) {
@@ -226,7 +288,7 @@ const PrivateAnalysisSession = () => {
       setNewComment('');
       setReplyTo(null);
       setTimestampComment(false);
-      
+
       toast({
         title: "Comment Added",
         description: "Your comment has been posted."
@@ -249,7 +311,7 @@ const PrivateAnalysisSession = () => {
       setNotes([...notes, note]);
       setNewNote('');
       setShareNote(false);
-      
+
       toast({
         title: "Note Added",
         description: shareNote ? "Note has been shared with session participant." : "Private note has been saved."
@@ -285,7 +347,7 @@ const PrivateAnalysisSession = () => {
     if (!session || !user || role !== 'coach') return;
 
     const success = await PrivateAnalysisService.updateSessionStatus(sessionId!, newStatus);
-    
+
     if (success) {
       setSession({ ...session, status: newStatus });
       toast({
@@ -341,7 +403,7 @@ const PrivateAnalysisSession = () => {
                       }}
                     >
                       {annotation.label && (
-                        <span 
+                        <span
                           className="absolute -top-6 left-0 text-white text-xs px-2 py-1 rounded"
                           style={{ backgroundColor: annotation.color }}
                         >
@@ -519,7 +581,7 @@ const PrivateAnalysisSession = () => {
               </Button>
             </div>
           )}
-          
+
           <div className="flex items-center gap-2">
             <Button
               variant={timestampComment ? "default" : "outline"}
@@ -529,7 +591,7 @@ const PrivateAnalysisSession = () => {
               <Clock className="h-3 w-3" />
             </Button>
           </div>
-          
+
           <div className="flex gap-2">
             <Input
               placeholder="Add a comment..."
@@ -666,7 +728,7 @@ const PrivateAnalysisSession = () => {
               <div>
                 <h1 className="text-2xl font-bold">{session.title}</h1>
                 <p className="text-gray-600">
-                  {role === 'coach' 
+                  {role === 'coach'
                     ? `with ${session.student?.display_name}`
                     : `Coach: ${session.coach?.display_name}`}
                 </p>
@@ -701,7 +763,7 @@ const PrivateAnalysisSession = () => {
           <div className="lg:col-span-2 space-y-4">
             {/* Video Player */}
             {renderVideoPlayer()}
-            
+
             {/* Annotation Tools */}
             {renderAnnotationTools()}
 
@@ -716,9 +778,8 @@ const PrivateAnalysisSession = () => {
                     {videos.map((video) => (
                       <div
                         key={video.id}
-                        className={`flex items-center justify-between p-2 rounded cursor-pointer hover:bg-gray-50 ${
-                          selectedVideo?.id === video.id ? 'bg-blue-50' : ''
-                        }`}
+                        className={`flex items-center justify-between p-2 rounded cursor-pointer hover:bg-gray-50 ${selectedVideo?.id === video.id ? 'bg-blue-50' : ''
+                          }`}
                         onClick={() => selectVideo(video)}
                       >
                         <div className="flex items-center gap-2">

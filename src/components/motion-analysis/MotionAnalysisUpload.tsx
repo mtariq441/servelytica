@@ -41,7 +41,7 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
 
   const strokeTypes = [
     "Forehand Drive",
-    "Backhand Drive", 
+    "Backhand Drive",
     "Forehand Loop",
     "Backhand Loop",
     "Forehand Chop",
@@ -76,15 +76,15 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const hasFile = uploadMode === "file" && videoFile;
     const hasLink = uploadMode === "link" && isLinkValid && videoLink;
-    
+
     if (!hasFile && !hasLink) {
       toast({
         title: "Missing Video",
-        description: uploadMode === "file" 
-          ? "Please select a video file." 
+        description: uploadMode === "file"
+          ? "Please select a video file."
           : "Please enter a valid video URL.",
         variant: "destructive"
       });
@@ -106,24 +106,37 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
 
     try {
       let filePath = "";
-      
+      let videoId = "";
+
+      // Import upload service dynamically
+      const { uploadFileToStorage } = await import("@/services/uploadService");
+
       if (hasFile && videoFile) {
-        const fileExt = videoFile.name.split('.').pop();
-        filePath = `videos/${user.id}/${Date.now()}.${fileExt}`;
-        
-        setUploadProgress(25);
-        
-        const { error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(filePath, videoFile, { upsert: false });
-        
-        if (uploadError) throw uploadError;
+        setUploadProgress(10);
+
+        // Use chunked upload
+        const result = await uploadFileToStorage(
+          videoFile,
+          user.id,
+          {
+            title: formData.title,
+            description: formData.description,
+            focusArea: formData.analysisType
+          }
+        );
+
+        if (!result.success || !result.video) {
+          throw new Error(result.error || "Upload failed");
+        }
+
+        filePath = result.filePath;
+        videoId = result.video.id;
+        setUploadProgress(50);
       } else if (hasLink) {
         filePath = videoLink;
+        setUploadProgress(50);
       }
-      
-      setUploadProgress(50);
-      
+
       const insertData: any = {
         user_id: user.id,
         title: formData.title || `Motion Analysis - ${new Date().toLocaleDateString()}`,
@@ -144,42 +157,33 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
         .insert(insertData)
         .select()
         .single() as any);
-      
+
       if (sessionError) throw sessionError;
-      
+
       setUploadProgress(75);
-      
+
       // Perform AI-based analysis using Gemini
       try {
-        let videoUrlForAnalysis = videoLink;
-        
-        if (hasFile && videoFile) {
-          const { data } = supabase.storage.from('videos').getPublicUrl(filePath);
-          videoUrlForAnalysis = data?.publicUrl || '';
-        }
-        
-        if (!videoUrlForAnalysis) {
-          throw new Error('Failed to generate video URL for analysis');
-        }
-        
         setUploadStatus("processing");
-        
+
         // Call Gemini AI analysis
+        // Pass videoId if available for backend analysis
         const aiAnalysisResult = await GeminiAnalysisService.analyzeVideoTechnique(
-          videoUrlForAnalysis,
-          'table-tennis'
+          hasFile ? filePath : videoLink,
+          'table-tennis',
+          videoId
         );
-        
+
         // Save AI analysis results to database
         await MotionAnalysisService.saveAIAnalysisResults(analysisSession.id, aiAnalysisResult);
-        
+
         toast({
           title: "AI Analysis Complete",
           description: "Your video has been analyzed using advanced AI technology.",
         });
       } catch (aiError: any) {
         console.error('AI Analysis error:', aiError);
-        
+
         // Fallback to placeholder analysis if Gemini fails
         console.log('Falling back to placeholder analysis...');
         const analysisTypes = ['stroke', 'footwork', 'body_position', 'timing', 'overall'];
@@ -191,64 +195,35 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
           areas_of_improvement: generateAreasOfImprovement(type),
           strengths: generateStrengths(type)
         }));
-        
+
         const { error: resultsError } = await (supabase
           .from('motion_analysis_results' as any)
           .insert(resultsData) as any);
-        
+
         if (resultsError) throw resultsError;
-        
+
         toast({
           title: "Basic Analysis Complete",
           description: "AI analysis unavailable. Showing basic analysis instead.",
           variant: "default"
         });
       }
-      
+
       setUploadProgress(100);
       setUploadStatus("complete");
-      
+
       // Immediate completion without artificial delays
       setUploading(false);
       setUploadProgress(0);
       setUploadStatus("idle");
       onUploadComplete(analysisSession.id);
-      
+
     } catch (error: any) {
       console.error('Error uploading video:', error);
-      console.error('Error details:', {
-        message: error?.message,
-        error_description: error?.error_description,
-        details: error?.details,
-        hint: error?.hint,
-        code: error?.code,
-        fullError: error
-      });
       setUploadStatus("error");
-      
-      // Extract detailed error message
-      let errorMessage = "Failed to upload video. Please try again.";
-      
-      if (error?.message) {
-        errorMessage = error.message;
-        
-        // Check for RLS policy violation
-        if (error.message.includes('row-level security') || error.message.includes('RLS') || error.message.includes('policy')) {
-          errorMessage = `Security Policy Error: ${error.message}. Please ensure RLS is disabled on motion_analysis tables in Supabase.`;
-        }
-        
-        // Check for storage bucket errors
-        if (error.message.includes('bucket') || error.message.includes('storage') || error.message.includes('permission')) {
-          errorMessage = `Storage Error: ${error.message}. Please check storage bucket permissions.`;
-        }
-      } else if (error?.error_description) {
-        errorMessage = error.error_description;
-      } else if (error?.details) {
-        errorMessage = error.details;
-      } else if (error?.hint) {
-        errorMessage = error.hint;
-      }
-      
+
+      let errorMessage = error.message || "Failed to upload video";
+
       toast({
         title: "Upload Failed",
         description: errorMessage,
@@ -367,7 +342,7 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
               <TabsTrigger value="file">Upload File</TabsTrigger>
               <TabsTrigger value="link">Video Link</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="file" className="mt-4">
               <DragDropZone
                 onFileSelect={handleFileSelect}
@@ -378,7 +353,7 @@ const MotionAnalysisUpload = ({ onUploadComplete }: MotionAnalysisUploadProps) =
                 maxSize={500 * 1024 * 1024}
               />
             </TabsContent>
-            
+
             <TabsContent value="link" className="mt-4">
               <VideoLinkInput
                 value={videoLink}

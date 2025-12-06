@@ -243,11 +243,12 @@ export class ProfileService {
 
       const currentCoachId = coachId || user.id;
       console.log('getPendingVideos called for coach:', currentCoachId);
-      
+
       // Fetch videos assigned to the coach that are still pending
       const { data: pendingVideos, error: pendingError } = await supabase
         .from('video_coaches')
         .select(`*, videos(*)`)
+        .eq('coach_id', currentCoachId)
         .eq('status', 'pending');
 
       if (pendingError) {
@@ -262,7 +263,7 @@ export class ProfileService {
       // Get video user IDs to fetch student names
       const videoUserIds = pendingVideos.map(assignment => (assignment.videos as any).user_id).filter(Boolean);
       const studentMap = new Map<string, string>();
-      
+
       if (videoUserIds.length > 0) {
         const { data: studentProfiles, error: profileError } = await supabase
           .from('profiles')
@@ -307,6 +308,7 @@ export class ProfileService {
         const { data: assignedVideos, error: assignedError } = await supabase
           .from('video_coaches')
           .select(`*, videos(*)`)
+          .eq('coach_id', coachId)
           .eq('status', 'completed'); // Only fetch completed videos
 
         if (assignedError) {
@@ -321,7 +323,7 @@ export class ProfileService {
         // Get video user IDs to fetch student names
         const videoUserIds = assignedVideos.map(assignment => (assignment.videos as any).user_id).filter(Boolean);
         const studentMap = new Map<string, string>();
-        
+
         if (videoUserIds.length > 0) {
           const { data: studentProfiles, error: profileError } = await supabase
             .from('profiles')

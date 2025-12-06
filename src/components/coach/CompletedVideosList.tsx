@@ -25,7 +25,7 @@ interface VideoFeedback {
 
 export const CompletedVideosList = ({ coachId }: CompletedVideosListProps) => {
   const [videos, setVideos] = useState<VideoData[]>([]);
-//   const [feedbacks, setFeedbacks] = useState<Map<string, VideoFeedback>>(new Map());
+  //   const [feedbacks, setFeedbacks] = useState<Map<string, VideoFeedback>>(new Map());
   const [feedbacks, setFeedbacks] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
@@ -34,7 +34,7 @@ export const CompletedVideosList = ({ coachId }: CompletedVideosListProps) => {
   const [videoUrlLoading, setVideoUrlLoading] = useState(false);
   const { toast } = useToast();
 
-//   console.log({feedbacks})
+  //   console.log({feedbacks})
 
   const loadCompletedVideos = useCallback(async () => {
     try {
@@ -84,7 +84,7 @@ export const CompletedVideosList = ({ coachId }: CompletedVideosListProps) => {
         .in('video_coaches_id', videoIds)
         .eq('coach_id', user.id);
 
-        // console.log({feedbackData})
+      // console.log({feedbackData})
 
       if (error) {
         console.error('Error loading feedbacks:', error);
@@ -103,6 +103,12 @@ export const CompletedVideosList = ({ coachId }: CompletedVideosListProps) => {
 
   const getVideoUrl = async (video: VideoData): Promise<string | null> => {
     try {
+      // Handle local uploads
+      if (video.file_path && video.file_path.startsWith('/uploads/')) {
+        return video.file_path;
+      }
+
+      // Handle Supabase uploads
       const { data, error } = await supabase.storage
         .from('videos')
         .createSignedUrl(video.file_path, 3600);
@@ -156,9 +162,8 @@ export const CompletedVideosList = ({ coachId }: CompletedVideosListProps) => {
         {Array.from({ length: 5 }).map((_, i) => (
           <Star
             key={i}
-            className={`h-3 w-3 ${
-              i < rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
-            }`}
+            className={`h-3 w-3 ${i < rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
+              }`}
           />
         ))}
         <span className="text-sm text-muted-foreground ml-1">({rating}/5)</span>
@@ -221,7 +226,7 @@ export const CompletedVideosList = ({ coachId }: CompletedVideosListProps) => {
             <TableHeader>
               <TableRow>
                 <TableHead>Video Title</TableHead>
-                 <TableHead>Video Description</TableHead>
+                <TableHead>Video Description</TableHead>
                 <TableHead>Student</TableHead>
                 <TableHead>Analysis Date</TableHead>
                 <TableHead>Focus Area</TableHead>
@@ -236,21 +241,21 @@ export const CompletedVideosList = ({ coachId }: CompletedVideosListProps) => {
                 return (
                   <TableRow key={video.id}>
                     <TableCell className="font-medium">
-                    {video?.title || video?.file_name}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {video.description}
-                  </TableCell>
+                      {video?.title || video?.file_name}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {video.description}
+                    </TableCell>
                     <TableCell>{video?.profiles?.display_name}</TableCell>
-                    
+
                     <TableCell>
-                      {video?.created_at 
-                        ? new Date(video?.created_at).toLocaleDateString() 
+                      {video?.created_at
+                        ? new Date(video?.created_at).toLocaleDateString()
                         : 'N/A'}
                     </TableCell>
                     <TableCell>{video.focus_areas || "General"}</TableCell>
                     <TableCell>
-                        {/* {console.log("feedbacks get", typeoffeedbacks[video.id])} */}
+                      {/* {console.log("feedbacks get", typeoffeedbacks[video.id])} */}
                       {feedback?.rating ? renderRating(feedback.rating) : 'N/A'}
                     </TableCell>
                     <TableCell>

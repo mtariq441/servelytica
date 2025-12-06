@@ -92,24 +92,24 @@ export function setupApiRoutes(app: any) {
   app.post('/api/videos/upload', async (req: any, res: any) => {
     let videoData: any = null;
     let tempFilePath: string | null = null;
-    
+
     try {
       const { file, fileName, fileSize, userId, title, description, focusArea, coachIds } = req.body;
-      
+
       if (!file || !userId) {
         return sendError(res, 'Missing file or userId', 400);
       }
-      
+
       if (!fileName) {
         return sendError(res, 'Missing fileName', 400);
       }
-      
+
       // Basic validation: userId should be a valid UUID
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(userId)) {
         return sendError(res, 'Invalid userId format', 400);
       }
-      
+
       // Decode base64 to buffer
       let fileData;
       try {
@@ -117,23 +117,23 @@ export function setupApiRoutes(app: any) {
       } catch (e) {
         return sendError(res, 'Invalid base64 encoded file', 400);
       }
-      
+
       // Create filename with timestamp
       const timestamp = Date.now();
       const ext = fileName.split('.').pop() || 'bin';
       const filePath = `${userId}/${timestamp}.${ext}`;
-      
+
       // Create temp directory for video storage
       const os = await import('os');
       const tmpDir = os.tmpdir();
       tempFilePath = `${tmpDir}/video_${timestamp}.${ext}`;
-      
+
       console.log(`[UPLOAD] Processing video upload: ${filePath} (${fileData.length} bytes)`);
       console.log(`[UPLOAD] Saving to temporary path: ${tempFilePath}`);
-      
+
       // Save video file temporarily for AI analysis
       fs.writeFileSync(tempFilePath, fileData);
-      
+
       // Create video record in database with "analyzing" status
       videoData = {
         userId: userId,
@@ -146,9 +146,9 @@ export function setupApiRoutes(app: any) {
         analyzed: false,
         uploadedAt: new Date()
       };
-      
+
       console.log(`[UPLOAD] Video data to insert:`, videoData);
-      
+
       let createdVideo;
       try {
         createdVideo = await videoRoutes.createVideo(videoData);
@@ -156,52 +156,52 @@ export function setupApiRoutes(app: any) {
         console.error(`[UPLOAD] Database error creating video:`, dbError);
         throw new Error(`Failed to create video record: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
       }
-      
+
       if (!createdVideo) {
         throw new Error('Failed to create video record in database - returned null');
       }
-      
+
       console.log(`[UPLOAD] Video record created with ID: ${createdVideo.id}`);
-      
+
       // AUTOMATIC AI-BASED MOTION ANALYSIS
       let motionAnalysis = null;
       try {
         const { analyzeMotionAndGameVideo } = await import('./motion-analysis');
         console.log(`[UPLOAD] Starting automatic motion analysis for video ${createdVideo.id}...`);
-        
+
         motionAnalysis = await analyzeMotionAndGameVideo(tempFilePath, {
           title,
           description,
           focusArea
         });
-        
+
         console.log(`[UPLOAD] Motion analysis completed. Score: ${motionAnalysis.overallScore}`);
-        
+
         // Update video with analysis results
         await videoRoutes.updateVideo(createdVideo.id, {
           analyzed: true
         });
-        
+
         createdVideo.analyzed = true;
-        
+
         console.log(`[UPLOAD] Video analysis results saved to database`);
       } catch (analysisError) {
         console.warn('[UPLOAD] Warning: Automatic motion analysis failed, but video was created:', analysisError);
         // Don't fail the upload - video is still created successfully
       }
-      
+
       // Assign coaches if provided
       if (coachIds && Array.isArray(coachIds) && coachIds.length > 0) {
         try {
           const { db } = await import('./db');
           const { videoCoaches } = await import('@shared/schema');
-          
+
           const coachAssignments = coachIds.map((coachId: string) => ({
             videoId: createdVideo.id,
             coachId: coachId,
             status: 'pending'
           }));
-          
+
           console.log(`[UPLOAD] Assigning coaches:`, coachAssignments);
           await db.insert(videoCoaches).values(coachAssignments);
           console.log(`[UPLOAD] Coaches assigned successfully`);
@@ -210,7 +210,7 @@ export function setupApiRoutes(app: any) {
           // Don't fail the entire upload if coach assignment fails
         }
       }
-      
+
       const response = {
         success: true,
         video: createdVideo,
@@ -219,7 +219,7 @@ export function setupApiRoutes(app: any) {
         size: fileData.length,
         analysis: motionAnalysis || null
       };
-      
+
       console.log(`[UPLOAD] Sending response with analysis data`);
       sendJson(res, response, 201);
     } catch (error) {
@@ -263,6 +263,31 @@ export function setupApiRoutes(app: any) {
       sendJson(res, result);
     } catch (error) {
       sendError(res, error);
+    }
+  });
+
+  // AI Analysis endpoint for existing videos (e.g. after chunked upload)
+  app.post('/api/videos/:videoId/analyze', async (req: any, res: any) => {
+    try {
+      const { videoId } = req.params;
+      const { videoPath, sport } = req.body;
+
+      if (!videoPath) {
+        return sendError(res, 'videoPath is required', 400);
+      }
+
+      console.log(`[ANALYSIS] Starting analysis for video ${videoId} at path ${videoPath}`);
+
+      const { analyzeVideo } = await import('./gemini-video-analysis');
+      const analysisResult = await analyzeVideo(videoPath, sport);
+
+      // Update video record with analysis status
+      await videoRoutes.updateVideo(videoId, { analyzed: true });
+
+      sendJson(res, { success: true, analysis: analysisResult });
+    } catch (error) {
+      console.error('[ANALYSIS] Error analyzing video:', error);
+      sendError(res, error, 500);
     }
   });
 
@@ -818,13 +843,13 @@ export function setupApiRoutes(app: any) {
     try {
       const videoId = req.params.videoId;
       const { videoPath } = req.body;
-      
+
       if (!videoPath) {
         return sendError(res, 'videoPath is required', 400);
       }
 
       const analysis = await videoAnalysisRoutes.analyzeVideo(videoPath);
-      
+
       // Optionally save analysis results to database
       await videoRoutes.updateVideo(videoId, {
         analysisStatus: 'completed',
@@ -841,7 +866,7 @@ export function setupApiRoutes(app: any) {
   app.post('/api/videos/:videoId/quick-feedback', async (req: any, res: any) => {
     try {
       const { videoPath } = req.body;
-      
+
       if (!videoPath) {
         return sendError(res, 'videoPath is required', 400);
       }
@@ -857,7 +882,7 @@ export function setupApiRoutes(app: any) {
   app.post('/api/videos/compare', async (req: any, res: any) => {
     try {
       const { videoPaths, description } = req.body;
-      
+
       if (!videoPaths || !Array.isArray(videoPaths) || videoPaths.length === 0) {
         return sendError(res, 'videoPaths array is required', 400);
       }
@@ -875,7 +900,7 @@ export function setupApiRoutes(app: any) {
   app.post('/api/admin/setup', async (req: any, res: any) => {
     try {
       const { userId, email, displayName } = req.body;
-      
+
       if (!userId || !email) {
         return sendError(res, 'userId and email required', 400);
       }
@@ -922,11 +947,11 @@ export function setupApiRoutes(app: any) {
           });
       }
 
-      sendJson(res, { 
-        success: true, 
+      sendJson(res, {
+        success: true,
         message: 'Admin user created successfully',
         userId,
-        email 
+        email
       }, 201);
     } catch (error) {
       console.error('Admin setup error:', error);
