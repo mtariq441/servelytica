@@ -13,6 +13,9 @@ dist-ssr
 *.local
 .env
 
+# Uploaded videos (large files)
+uploaded_videos/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
