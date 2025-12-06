@@ -1,5 +1,16 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, check, unique, varchar, real } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, check, unique, varchar, real, index } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
+
+// Session storage table for Replit Auth
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
 
 // Enums
 export const appRoleEnum = pgEnum('app_role', ['admin', 'coach', 'player']);

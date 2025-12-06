@@ -1,22 +1,52 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import type { Database } from '@/integrations/supabase/types';
 
-type Profile = Database['public']['Tables']['profiles']['Row'];
-type UserRole = Database['public']['Tables']['user_roles']['Row'];
+interface AuthUser {
+  id: string;
+  email: string | null;
+  username: string;
+  displayName: string | null;
+  replitUserId: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface UserProfile {
+  id: string;
+  userId: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+  phone: string | null;
+  location: string | null;
+  playingExperience: string | null;
+  preferredPlayStyle: string | null;
+  memberSince: string | null;
+  profileImage: string | null;
+  sportId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface UserRole {
+  id: string;
+  userId: string;
+  role: 'admin' | 'coach' | 'player';
+  createdAt: string;
+}
 
 interface AuthContextType {
-  user: User | null;
-  userProfile: Profile | null;
+  user: AuthUser | null;
+  userProfile: UserProfile | null;
   userRoles: UserRole | null;
-  session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, username: string, displayName: string, role: 'coach' | 'player', sportId: string, surveyData?: any) => Promise<{ error: any }>;
-  signIn: (email: string, password: string) => Promise<{ error: any; user?: User | null }>;
-  signInWithGoogle: () => Promise<{ error: any; user?: User | null }>;
-  signOut: () => Promise<void>;
+  isAuthenticated: boolean;
+  login: () => void;
+  logout: () => void;
+  refetchUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,279 +59,98 @@ export const useAuth = () => {
   return context;
 };
 
+async function fetchAuthUser(): Promise<AuthUser | null> {
+  const response = await fetch('/api/auth/user', {
+    credentials: 'include',
+  });
+  
+  if (response.status === 401) {
+    return null;
+  }
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  
+  return response.json();
+}
+
+async function fetchUserProfile(userId: string): Promise<UserProfile | null> {
+  const response = await fetch(`/api/profiles/${userId}`, {
+    credentials: 'include',
+  });
+  
+  if (!response.ok) {
+    return null;
+  }
+  
+  return response.json();
+}
+
+async function fetchUserRole(userId: string): Promise<UserRole | null> {
+  const response = await fetch(`/api/user-roles/${userId}`, {
+    credentials: 'include',
+  });
+  
+  if (!response.ok) {
+    return null;
+  }
+  
+  return response.json();
+}
+
 interface AuthProviderProps {
   children: ReactNode;
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [userRoles, setUserRoles] = useState<UserRole | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: user, isLoading, refetch } = useQuery({
+    queryKey: ["/api/auth/user"],
+    queryFn: fetchAuthUser,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
-    // Only set up auth listener if Supabase is properly configured
-    if (!isSupabaseConfigured) {
-      setLoading(false);
-      return;
+    if (user?.id) {
+      fetchUserProfile(user.id).then(setUserProfile).catch(console.error);
+      fetchUserRole(user.id).then(setUserRoles).catch(console.error);
+    } else {
+      setUserProfile(null);
+      setUserRoles(null);
     }
+  }, [user?.id]);
 
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        // console.log(session?.user ?? null);
-        setLoading(false);
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    }).catch(() => {
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+  const login = useCallback(() => {
+    window.location.href = '/api/login';
   }, []);
 
-  useEffect(() => {
-    if(user?.id) {
-        const fetchProfiles = async () => {
-            const {data, error} = await supabase.from('profiles').select("*").eq('user_id', user.id).single();
-            if (error) {
-                console.error('Error fetching profile:', error);
-            } else {
-                setUserProfile(data);
-            }
-        }
-        const fetchUserRoles = async () => {
-            const {data: userRolesData, error} = await supabase.from('user_roles').select("*").eq('user_id', user.id).single();
-            if (error) {
-                console.error('Error fetching profile:', error);
-            } else {
-                setUserRoles(userRolesData);
-            }
-        }
-        fetchProfiles();
-        fetchUserRoles();
-    }
-  }, [user?.id])
+  const logout = useCallback(() => {
+    queryClient.clear();
+    window.location.href = '/api/logout';
+  }, [queryClient]);
 
-  const signUp = async (email: string, password: string, username: string, displayName: string, role: 'coach' | 'player', sportId: string, surveyData?: any) => {
-    try {
-      // Redirect to upload after signup
-      const redirectUrl = `${window.location.origin}/upload`;
-      
-      // Ensure username is always provided
-      const finalUsername = username || `user_${Date.now()}`;
-      
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            username: finalUsername,
-            display_name: displayName || finalUsername,
-            role: role || 'player',
-            sport_id: sportId || null
-          }
-        }
-      });
+  const refetchUser = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
-      if (error) {
-        toast({
-          title: "Signup failed",
-          description: error.message || "Please check your input and try again.",
-          variant: "destructive",
-        });
-        return { error };
-      }
-
-      // Profile will be auto-created by Supabase trigger on auth.users insert
-      // Just wait a moment to let the trigger execute
-      if (data?.user?.id) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Save survey data if provided via API
-        if (surveyData && role === 'player') {
-          try {
-            const response = await fetch('/api/surveys', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: data.user.id,
-                leagueRating: surveyData.leagueRating || null,
-                tournamentRating: surveyData.tournamentRating || null,
-                tournamentsYearly: surveyData.tournamentsYearly || null,
-                leagueFrequency: surveyData.leagueFrequency || null,
-                purposeOfPlay: surveyData.purposeOfPlay || null,
-                practiceTime: surveyData.practiceTime || null,
-                coachingFrequency: surveyData.coachingFrequency || null,
-                favoriteClubs: surveyData.favoriteClubs || null,
-              }),
-            });
-
-            if (!response.ok) {
-              const errorData = await response.json();
-              console.error('Error saving survey data:', errorData);
-            }
-          } catch (surveyError) {
-            console.error('Error saving survey data:', surveyError);
-            // Don't fail signup if survey save fails
-          }
-        }
-      }
-
-      // Check if email confirmation is required
-      const requiresConfirmation = data?.user?.user_metadata?.email_verified === false || 
-                                  data?.user?.identities?.[0]?.identity_data?.email_verified === false;
-      
-      toast({
-        title: "Account created successfully!",
-        description: requiresConfirmation 
-          ? "Check your email to confirm your account. Then login with your credentials."
-          : "You can now login with your email and password!",
-      });
-
-      return { error: null };
-    } catch (error: any) {
-      console.error('Signup error:', error);
-      toast({
-        title: "Signup failed",
-        description: error.message || "An unexpected error occurred. Please try again.",
-        variant: "destructive",
-      });
-      return { error };
-    }
-  };
-
-  const signIn = async (email: string, password: string) => {
-    try {
-      // Redirect to upload after signin
-      const redirectUrl = `${window.location.origin}/upload`;
-      
-      const { error, data } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        // Check if it's an email confirmation issue
-        if (error.message.toLowerCase().includes('email not confirmed')) {
-          toast({
-            title: "Email not confirmed",
-            description: "Please check your email and click the confirmation link first, then try logging in again.",
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "Login failed",
-            description: error.message || "Invalid email or password.",
-            variant: "destructive",
-          });
-        }
-        return { error };
-      } else {
-        // Update state immediately on successful login
-        setUser(data.user);
-        setSession(data.session);
-        toast({
-          title: "Welcome back!",
-          description: "You have successfully logged in.",
-        });
-        return { error: null, user: data.user };
-      }
-    } catch (error: any) {
-      console.error('Login error:', error);
-      toast({
-        title: "Login failed",
-        description: error.message || "An unexpected error occurred. Please try again.",
-        variant: "destructive",
-      });
-      return { error };
-    }
-  };
-
-  const signInWithGoogle = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/`,
-        },
-      });
-
-      if (error) {
-        toast({
-          title: "Google sign-in failed",
-          description: error.message || "Failed to sign in with Google",
-          variant: "destructive",
-        });
-        return { error };
-      }
-
-      return { error: null };
-    } catch (error: any) {
-      console.error('Google sign-in error:', error);
-      toast({
-        title: "Google sign-in failed",
-        description: error.message || "An unexpected error occurred",
-        variant: "destructive",
-      });
-      return { error };
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        toast({
-          title: "Logout failed",
-          description: error.message,
-          variant: "destructive",
-        });
-      } else {
-        // Clear user state immediately
-        setUser(null);
-        setSession(null);
-        setUserProfile(null);
-        setUserRoles(null);
-        toast({
-          title: "Logged out",
-          description: "You have been successfully logged out.",
-        });
-      }
-    } catch (error: any) {
-      toast({
-        title: "Logout failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const value = {
-    user,
-    userRoles,
-    session,
-    loading,
-    signUp,
-    signIn,
-    signInWithGoogle,
-    signOut,
+  const value: AuthContextType = {
+    user: user ?? null,
     userProfile,
+    userRoles,
+    loading: isLoading,
+    isAuthenticated: !!user,
+    login,
+    logout,
+    refetchUser,
   };
 
-  // Show loading screen while auth is initializing
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-4">

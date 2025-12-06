@@ -9,7 +9,7 @@ import { AppBar, Toolbar, IconButton, useScrollTrigger, Box, Typography } from '
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, logout, login } = useAuth();
   const { role } = useUserRole();
   const navigate = useNavigate();
   const location = useLocation();
@@ -23,13 +23,15 @@ const Navbar = () => {
     setIsMenuOpen(!isMenuOpen);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     if (isMenuOpen) {
       setIsMenuOpen(false);
     }
-    
-    await signOut();
-    navigate('/');
+    logout();
+  };
+
+  const handleLogin = () => {
+    login();
   };
 
   const navItems = [
@@ -171,9 +173,13 @@ const Navbar = () => {
                   transition={{ duration: 0.3 }}
                   className="hidden lg:block"
                 >
-                  <Link to="/auth">
-                    <Button size="sm" className="border-2 border-[#ff7e00] text-[#ff7e00] hover:bg-[#ff7e00] hover:text-white transition-all">LOGIN</Button>
-                  </Link>
+                  <Button 
+                    size="sm" 
+                    className="border-2 border-[#ff7e00] text-[#ff7e00] hover:bg-[#ff7e00] hover:text-white transition-all"
+                    onClick={handleLogin}
+                  >
+                    LOGIN
+                  </Button>
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, x: 10 }}
@@ -181,14 +187,13 @@ const Navbar = () => {
                   transition={{ duration: 0.3, delay: 0.1 }}
                   className="hidden lg:block"
                 >
-                  <Link to="/auth">
-                    <Button 
-                      size="sm"
-                      className="bg-gradient-to-r from-[#ff7e00] to-[#ff9500] text-white"
-                    >
-                      SIGN UP
-                    </Button>
-                  </Link>
+                  <Button 
+                    size="sm"
+                    className="bg-gradient-to-r from-[#ff7e00] to-[#ff9500] text-white"
+                    onClick={handleLogin}
+                  >
+                    SIGN UP
+                  </Button>
                 </motion.div>
               </>
             )}

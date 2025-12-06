@@ -6,11 +6,12 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { setupCors, setupBodyParser, setupErrorHandler, setupHealthCheck } from './middleware';
 import { setupApiRoutes } from './api';
+import { setupAuth } from './replitAuth';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORT = process.env.PORT || 5000;
+const PORT = parseInt(process.env.PORT || '5000', 10);
 const isDev = process.env.NODE_ENV !== 'production';
 
 async function createApp() {
@@ -20,6 +21,9 @@ async function createApp() {
   setupCors(app);
   setupBodyParser(app);
   setupHealthCheck(app);
+
+  // Setup Replit Auth (must be before API routes)
+  await setupAuth(app);
 
   // Setup API routes
   setupApiRoutes(app);
